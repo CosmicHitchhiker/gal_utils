@@ -28,7 +28,8 @@ def correlation(vec1, vec2):
     return(np.arccos(np.sum(vec1 * vec2)))
 
 
-def Qfunc3(xys0, img, slit0, imgscale, wy=1.5, crpix2=256, spec_x=None, verbose=False):
+def Qfunc3(xys0, img, slit0, imgscale, wy=1.5, crpix2=256, spec_x=None,
+           verbose=False):
     # imgscale = np.abs(imgscale)
     wy = np.abs(0.5 * wy / imgscale)
     x0, y0, slitscale = xys0
@@ -57,7 +58,6 @@ def Qfunc3(xys0, img, slit0, imgscale, wy=1.5, crpix2=256, spec_x=None, verbose=
     # plt.show()
     # print(img_reg)
 
-
     slit_x = (spec_x - crpix2) * slitscale
     img_x = (np.arange(len(img_reg)) - x0) * imgscale
     # print()
@@ -69,8 +69,8 @@ def Qfunc3(xys0, img, slit0, imgscale, wy=1.5, crpix2=256, spec_x=None, verbose=
     img_reg = norm_vector(img_reg)
     if verbose:
         plt.figure()
-        plt.plot(slit_x/slitscale, slit, label='spec')
-        plt.plot(slit_x/slitscale, img_reg, label='img')
+        plt.plot(slit_x / slitscale, slit, label='spec')
+        plt.plot(slit_x / slitscale, img_reg, label='img')
         plt.legend()
 
         realx = (spec_x - crpix2) * (slitscale / imgscale) + x0
@@ -88,7 +88,8 @@ def Qfunc3(xys0, img, slit0, imgscale, wy=1.5, crpix2=256, spec_x=None, verbose=
     return(correlation(img_reg, slit))
 
 
-def dxdy_setup(img, slit, imgscale, slitscale, xy_center, wy=1.5, crpix2=256, spec_x=None):
+def dxdy_setup(img, slit, imgscale, slitscale, xy_center, wy=1.5, crpix2=256,
+               spec_x=None):
     dx = 0
     dy = 0
 
@@ -167,7 +168,8 @@ def find_slit_position(image, spec, speclim):
     xy_center = myrot(*xy_cent, PA - 90, center_image)
     img = ndimage.rotate(img, PA - 90, reshape=False, mode='nearest')
 
-    dx, dy = dxdy_setup(img, F_slit, imgscale, specscale, xy_center, wy, crpix2, spec_x)
+    dx, dy = dxdy_setup(img, F_slit, imgscale, specscale, xy_center, wy, crpix2,
+                        spec_x)
 
     x = xy_center[0] + dx
     y = xy_center[1] + dy
@@ -183,10 +185,10 @@ def find_slit_position(image, spec, speclim):
                              bounds=bounds)
 
     print(xys0)
-    print(Qfunc3(xys0.x, img, F_slit, imgscale, wy, crpix2, spec_x, verbose=True))
+    print(Qfunc3(xys0.x, img, F_slit, imgscale, wy, crpix2, spec_x,
+                 verbose=True))
     radec = myrot(*xys0.x[:2], -(PA - 90), center_image)
     radec = wcs.pixel_to_world(*radec)
-
 
     spec_header_new = spec.header.copy()
     spec_header_new['CDELT2'] = xys0.x[2]
