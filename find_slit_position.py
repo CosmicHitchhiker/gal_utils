@@ -149,14 +149,24 @@ def find_slit_position(image, spec, speclim):
         crpix2 = 1
 
     if 'POSANG' in spec.header:
+        # TDS
         PA = spec.header['POSANG']
+    elif 'PARANGLE' in spec.header and 'ROTANGLE' in spec.header:
+        # SCORPIO
+        PA = spec.header['PARANGLE'] - spec.header['ROTANGLE'] + 132.5
     else:
-        PA = 185
+        PA = 0
 
     if 'SLIT' in spec.header:
         wy = parse_tds_slit(spec.header['SLIT'])
     else:
         wy = 1.0
+
+    print('Spectrum CRPPIX2 ', crpix2)
+    print('Spectrum scale ', specscale)
+    print('Image scale ', imgscale)
+    print('PA ', PA)
+    print('Slit width ', wy)
 
     spec_data = spec.data[speclim]
     spec_x = np.arange(spec.header['NAXIS2'])[speclim]
