@@ -42,20 +42,21 @@ def fits_to_data(names):
     frames = [x[0].data for x in hduls]
     headers = [x[0].header for x in hduls]
 
+    data = {'data': frames, 'headers': headers}
+
     try:
         errors = [x['errors'].data for x in hduls]
+        data['errors'] = errors
     except KeyError:
-        errors = [np.zeros_like(x) for x in frames]
+        data['errors'] = np.sqrt(data['data'])
         print('No errors found')
 
     try:
         mask = [x['mask'].data for x in hduls]
+        data['mask'] = mask
     except KeyError:
-        mask = [np.zeros_like(x) for x in frames]
         print('No mask found')
 
-    data = {'data': frames, 'headers': headers,
-            'errors': errors, 'mask': mask}
     return data
 
 
@@ -100,7 +101,7 @@ def meas_velocity(data, xlim, ylim, refwl=6562.81, binning=False):
     if 'CRDER1' in hdr:
         syserr = hdr['CRDER1']
     else:
-        syserr = hdr['CDELT1']
+        syserr = 0
 
     wl = coords_from_header_values(hdr['CRPIX1'], hdr['CRVAL1'],
                                    hdr['CDELT1'], hdr['NAXIS1'])
@@ -180,6 +181,8 @@ def main(args=None):
                         help='reference wavelength')
     parser.add_argument('-b', '--binning', type=float, nargs='?', const=2,
                         default=0)
+    parser.add_argument('-e', '--errors',
+                        help='''fits file with errors (if not in spectrum)''')
     pargs = parser.parse_args(args[1:])
 
     specname = pargs.spectrum
@@ -193,6 +196,9 @@ def main(args=None):
         x = slice(pargs.xrange[0], pargs.xrange[1])
     else:
         x = slice(None, None)
+
+    if pargs.errors:
+        data['errors'] = [fits.getdata(pargs.errors)]
 
     if pargs.output:
         outname = pargs.output
