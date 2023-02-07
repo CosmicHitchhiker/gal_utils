@@ -246,6 +246,7 @@ def find_slit_position(image, spec, speclim):
     spec_header_new['CRPIX2'] = crpix2
     if 'EPOCH' in spec_header_new:
         spec_header_new['EPOCH'] = 2000.0
+    spec_header_new['POSANG'] = PA
     return(spec_header_new)
 
 

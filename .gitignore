@@ -2,3 +2,5 @@
 .ipynb_checkpoints/
 
 *.ipynb
+
+fix_header_errors.py
