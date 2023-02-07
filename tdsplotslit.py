@@ -8,10 +8,14 @@ from astropy import units as u
 from astropy.io import fits
 from astropy.wcs import WCS
 from matplotlib.patches import Rectangle
-from astropy.visualization.wcsaxes import SphericalCircle
+# from astropy.visualization.wcsaxes import SphericalCircle
 
 from matplotlib.transforms import Affine2D
 from astropy.visualization.wcsaxes import WCSAxes
+
+from astropy.coordinates import SkyCoord
+from astropy.visualization import simple_norm
+
 
 class mySlit(Polygon):
     """
@@ -45,8 +49,8 @@ class mySlit(Polygon):
     Additional keyword arguments are passed to `~matplotlib.patches.Polygon`
     """
 
-    def __init__(self, anchor, width=1.5*u.arcsec, height=3*u.arcmin,
-                 theta=0*u.deg, resolution=100, vertex_unit=u.deg, **kwargs):
+    def __init__(self, anchor, width=1.5 * u.arcsec, height=3 * u.arcmin,
+                 theta=0 * u.deg, resolution=100, vertex_unit=u.deg, **kwargs):
 
         # Extract longitude/latitude, either from a tuple of two quantities, or
         # a single 2-element Quantity.
@@ -81,7 +85,7 @@ class mySlit(Polygon):
         vertices = np.array([lon, lat])
 
         # Rotation matrix
-        print(u.Quantity(theta*u.rad).to_value(u.deg))
+        print(u.Quantity(theta * u.rad).to_value(u.deg))
         rot_matrix = np.array([[np.cos(theta), +np.sin(theta)],
                                [-np.sin(theta), np.cos(theta)]])
 
@@ -126,8 +130,8 @@ class mySlit2(Polygon):
     Additional keyword arguments are passed to `~matplotlib.patches.Polygon`
     """
 
-    def __init__(self, anchor, width=1.5*u.arcsec, height=3*u.arcmin,
-                 theta=0*u.deg, resolution=100, vertex_unit=u.deg, **kwargs):
+    def __init__(self, anchor, width=1.5 * u.arcsec, height=3 * u.arcmin,
+                 theta=0 * u.deg, resolution=100, vertex_unit=u.deg, **kwargs):
 
         # Extract longitude/latitude, either from a tuple of two quantities, or
         # a single 2-element Quantity.
@@ -171,7 +175,7 @@ class mySlit2(Polygon):
 
         vertices = vertices.T
         # Rotation matrix
-        print(u.Quantity(theta*u.rad).to_value(u.deg))
+        print(u.Quantity(theta * u.rad).to_value(u.deg))
         rot_matrix = np.array([[np.cos(theta), +np.sin(theta)],
                                [-np.sin(theta), np.cos(theta)]])
 
@@ -187,11 +191,10 @@ def newWCS(center, angle, fig):
     if u.Quantity(angle).unit != u.dimensionless_unscaled:
         angle = angle.to_value(u.rad)
     else:
-        angle = (anggle * u.deg).to_value(u.rad)
-
+        angle = (angle * u.deg).to_value(u.rad)
 
     if u.Quantity(center).unit != u.dimensionless_unscaled:
-        center_deg = u.Quantity(center).to_value(u.deg)
+        center = u.Quantity(center).to_value(u.deg)
 
     # Set up an affine transformation
     transform = Affine2D()
@@ -208,7 +211,7 @@ def newWCS(center, angle, fig):
     coord_meta['format_unit'] = None, None
 
     ax = WCSAxes(fig, [0.1, 0.1, 0.8, 0.8], aspect='equal',
-             transform=transform, coord_meta=coord_meta)
+                 transform=transform, coord_meta=coord_meta)
     return(ax)
 
 
@@ -230,7 +233,6 @@ def my_slit(center, rot=0, dw=1.5, l_slit=3., trans=None, **kwargs):
     res = Rectangle(angle_deg, dw, l_slit, angle=rot, rotation_point='center',
                     transform=trans, **kwargs)
     return res
-
 
 
 def parse_tds_slit(slitname):
@@ -266,25 +268,33 @@ def main(args=None):
     radec_slit = [Angle(hdr['RA'] + ' hours'), Angle(hdr['DEC'] + ' degrees')]
     slit_width = parse_tds_slit(hdr['SLIT'])
 
-    radec_slit[0] += pargs.ra_corr*u.arcsec
-    radec_slit[1] += pargs.dec_corr*u.arcsec
+    radec_slit[0] += pargs.ra_corr * u.arcsec
+    radec_slit[1] += pargs.dec_corr * u.arcsec
+
+    PA = hdr['POSANG'] * u.deg
 
     ax = plt.subplot(projection=wcs)
     ax.set_title(hdr['OBJECT'])
-    ax.imshow(image.data, cmap='bone')
+    norm = simple_norm(image.data, 'linear', percent=98.0)
+    ax.imshow(image.data, cmap='bone', origin='lower', norm=norm)
 
-    PA = hdr['POSANG']
+    slit_center = SkyCoord(*radec_slit, frame='icrs', unit=(u.hourangle, u.deg))
+    # PA щели, туда будет направлена ось "широт"
+    slit_frame = slit_center.skyoffset_frame(rotation=PA)
+
+    # overlay = ax.get_coords_overlay(slit_frame)
 
     # s = my_slit(radec_slit, rot=PA, trans=ax.get_transform('icrs'))
 
-    s = mySlit(radec_slit, slit_width*u.arcsec, 3.0*u.arcmin, theta=PA*2*u.deg,
+    s = mySlit([0 * u.deg, 0 * u.deg], slit_width * u.arcsec, 3.0 * u.arcmin,
+               theta=0 * u.deg,
                edgecolor='tab:olive', facecolor='none', lw=0.5,
-               transform=ax.get_transform('icrs'))
+               transform=ax.get_transform(slit_frame))
     ax.add_patch(s)
-    c = mySlit(radec_slit, 0.1*u.arcsec, 0.1*u.arcmin, theta=(PA-45)*2*u.deg,
-               edgecolor='red', facecolor='none',
-               transform=ax.get_transform('icrs'))
-    ax.add_patch(c)
+    # c = mySlit(radec_slit, 0.1*u.arcsec, 0.1*u.arcmin, theta=(PA-45*u.deg),
+    #            edgecolor='red', facecolor='none',
+    #            transform=ax.get_transform('icrs'))
+    # ax.add_patch(c)
     plt.show()
     return 0
 
