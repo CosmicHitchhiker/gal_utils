@@ -8,6 +8,9 @@ import pandas as pd
 from tqdm import tqdm
 import scipy.optimize as opt
 from vorbin.voronoi_2d_binning import voronoi_2d_binning as vorbin
+from astropy.coordinates import SkyCoord
+import astropy.units as u
+
 
 
 def myimshow(img, ax=None):
@@ -96,6 +99,16 @@ def coords_from_header_values(crpix, crval, cdelt, naxis):
     return coords
 
 
+def get_radec(pos, hdr):
+    slit_center = SkyCoord(hdr['RA'], hdr['DEC'], unit=(u.hourangle, u.deg))
+    slit_ra = slit_center.ra + pos * u.arcsec * np.sin(hdr['POSANG'])
+    slit_dec = slit_center.dec + pos * u.arcsec * np.cos(hdr['POSANG'])
+    slit = SkyCoord(slit_ra, slit_dec, frame='icrs')
+    slit_ra = slit.ra.to_string(unit=u.hourangle, sep=':')
+    slit_dec = slit.dec.to_string(unit=u.deg, sep=':')
+    return slit_ra, slit_dec
+
+
 def meas_velocity(data, xlim, ylim, refwl=6562.81, binning=False):
     hdr = data['headers'][0]
     if 'CRDER1' in hdr:
@@ -163,6 +176,7 @@ def meas_velocity(data, xlim, ylim, refwl=6562.81, binning=False):
     result_pd['flux_err'] = I_max_err[mask]
     if binned:
         result_pd['n_rows'] = nPixels[mask]
+    result_pd['RA'], result_pd['DEC'] = get_radec(regpos[mask], hdr)
 
     return result_pd
 
