@@ -320,6 +320,9 @@ class PlotWidget(QWidget):
         self.gal_fig.figure.clear()
         self.plot_fig.figure.clear()
 
+        if self.csv_changed:
+            self.csvGraph = csvPlot([pd.read_csv(x) for x in self.csv_name])
+
         if self.data is not None:
             self.axes_plot = self.plot_fig.figure.subplots()
             rel_slits = []
