@@ -254,27 +254,56 @@ class radecSpinBox(QAbstractSpinBox):
     def getAngle(self):
         return self.angle
 
+    def setValue(self, value):
+        self.angle = Angle(value, unit=self.unit)
+        self.line.setText(self.textFromValue(self.angle.value))
+
 
 class PlotWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, csv=None, frame=None, refcenter=None, PA=0.,
+                 inclination=0., velocity=0.):
         super().__init__(parent)
 
-        #  create widgets
+        self.gal_changed = False
+        self.csv_changed = False
+
+        # create widgets
         self.plot_fig = FigureCanvas(Figure(figsize=(5, 3)))
         self.gal_fig = FigureCanvas(Figure(figsize=(5, 3)))
         self.toolbar_plot = NavigationToolbar2QT(self.plot_fig, self)
         self.toolbar_gal = NavigationToolbar2QT(self.gal_fig, self)
+
         self.image_field = OpenFile(text='image', mode='o')
+        if frame is not None:
+            self.image_field.fill_string(frame)
+            self.gal_changed = True
+
         self.csv_field = OpenFile(text='csv', mode='n')
+        if csv is not None:
+            csv = ', '.join(csv)
+            self.csv_field.fill_string(csv)
+            self.csv_changed = True
+
         self.i_input = QDoubleSpinBox()
+        self.i_input.setValue(inclination)
+
         self.PA_input = QDoubleSpinBox()
         self.PA_input.setMaximum(360.0)
+        self.PA_input.setValue(PA)
+
         self.ra_input = radecSpinBox(radec='ra')
-        self.dec_input = radecSpinBox()
+        self.dec_input = radecSpinBox(radec='dec')
+        if refcenter is not None:
+            self.ra_input.setValue(refcenter[0])
+            self.dec_input.setValue(refcenter[1])
+
         self.vel_input = QDoubleSpinBox()
-        self.vel_input.setMaximum(50000)
+        self.vel_input.setMaximum(500000)
+        self.vel_input.setValue(velocity)
+
         self.redraw_button = QPushButton(text='Redraw')
 
+        # Layout
         left_layout = QFormLayout()
         left_layout.addRow(self.csv_field)
         left_layout.addRow('i', self.i_input)
@@ -286,7 +315,6 @@ class PlotWidget(QWidget):
         right_layout.addRow('DEC', self.dec_input)
         right_layout.addRow(self.redraw_button)
 
-        #  Create layout
         glayout = QGridLayout()
         glayout.addWidget(self.toolbar_plot, 0, 0)
         glayout.addWidget(self.toolbar_gal, 0, 1)
@@ -296,8 +324,6 @@ class PlotWidget(QWidget):
         glayout.addLayout(right_layout, 2, 1)
         self.setLayout(glayout)
 
-        self.gal_changed = False
-        self.csv_changed = False
         self.galIm = None
 
         self.redraw_button.clicked.connect(self.redraw)
@@ -317,7 +343,6 @@ class PlotWidget(QWidget):
         """ Update the plot with the current input values """
         self.updateValues()
 
-        self.gal_fig.figure.clear()
         self.plot_fig.figure.clear()
 
         if self.csv_changed:
@@ -335,6 +360,7 @@ class PlotWidget(QWidget):
                 masks.append(mask)
 
         if self.gal_changed:
+            self.gal_fig.figure.clear()
             image = fits.open(self.image_field.files)[0]
             self.galIm = galaxyImage(self.gal_fig.figure, image)
             self.galIm.plot_galaxy(self.gal_frame)
@@ -365,8 +391,25 @@ class PlotWidget(QWidget):
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--csv', nargs='+', default=None,
+                        help='''csv or similar file with positions and
+                        velocities''')
+    parser.add_argument('-r', '--refcenter', nargs=2, default=None,
+                        help='''coordinates of center of galaxy''')
+    parser.add_argument('-v', '--velocity', type=float, default=0.0,
+                        help='system velocity')
+    parser.add_argument('-p', '--PA', type=float, default=0.0,
+                        help='galaxy PA')
+    parser.add_argument('-i', '--inclination', type=float, default=0.0,
+                        help='inclination of galaxy')
+    parser.add_argument('-f', '--frame', default=None,
+                        help='frame with image')
+    pargs = parser.parse_args(sys.argv[1:])
 
     app = QApplication(sys.argv)
-    w = PlotWidget()
+    w = PlotWidget(None, pargs.csv, pargs.frame, pargs.refcenter, pargs.PA,
+                   pargs.inclination, pargs.velocity)
     w.show()
     sys.exit(app.exec())
