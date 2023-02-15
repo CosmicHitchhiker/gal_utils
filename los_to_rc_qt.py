@@ -75,6 +75,7 @@ def los_to_rc(data, gal_center, gal_PA, inclination, sys_vel, ax=None,
     slit_pos = data['position']
     slit = SkyCoord(slit_ra, slit_dec, frame='icrs', unit=(u.hourangle, u.deg))
 
+    # gal_PA большой полуоси, туда будет направлена ось "широт"
     gal_frame = gal_center.skyoffset_frame(rotation=gal_PA)
     rel_slit = slit.transform_to(gal_frame)
 
@@ -305,9 +306,14 @@ class PlotWidget(QWidget):
 
         if self.data is not None:
             self.axes_plot = self.plot_fig.figure.subplots()
-            rel_slit, masks = los_to_rc(self.data, self.gal_center, self.PA,
-                                        self.inclination, self.sys_vel,
-                                        ax=self.axes_plot)
+            rel_slits = []
+            masks = []
+            for dat in self.data:
+                rel_slit, mask = los_to_rc(dat, self.gal_center, self.PA,
+                                           self.inclination, self.sys_vel,
+                                           ax=self.axes_plot)
+                rel_slits.append(rel_slit)
+                masks.append(mask)
 
         if self.image is not None:
             wcs = WCS(self.image.header)
@@ -315,7 +321,9 @@ class PlotWidget(QWidget):
                 subplot_kw={'projection': wcs})
             plot_galaxy(self.axes_gal, self.image, gal_frame=self.gal_frame)
             if self.data is not None:
-                plot_slit_points(self.axes_gal, rel_slit, masks, self.gal_frame)
+                for rel_slit, mask in zip(rel_slits, masks):
+                    plot_slit_points(self.axes_gal, rel_slit, mask,
+                                     self.gal_frame)
 
         self.gal_fig.draw()
         self.plot_fig.draw()
@@ -341,7 +349,7 @@ class PlotWidget(QWidget):
 
         self.csv_name = self.csv_field.files
         if self.csv_name is not None:
-            self.data = pd.read_csv(self.csv_name[0])
+            self.data = [pd.read_csv(x) for x in self.csv_name]
         else:
             self.data = None
 
