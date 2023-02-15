@@ -31,7 +31,6 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QStyle,
     QAbstractSpinBox,
-    QLineEdit,
     QPushButton,
 )
 matplotlib.use('QtAgg')
@@ -120,6 +119,25 @@ def los_to_rc(data, gal_center, gal_PA, inclination, sys_vel, ax=None,
                 yerr=vel_r_err[second_side_mask], linestyle='', marker='.')
 
     return rel_slit, [first_side_mask, second_side_mask]
+
+
+class galaxyImage():
+    def __init__(self, figure, image):
+        self.wcs = WCS(image.header)
+        self.axes_gal = figure.subplots(
+            subplot_kw={'projection': self.wcs})
+        self.image = image
+
+    def plot_galaxy(self, gal_frame):
+        self.gal_frame = gal_frame
+        plot_galaxy(self.axes_gal, self.image, self.gal_frame)
+
+
+class csvPlot():
+    def __init__(self, data):
+        self.data = data
+        print('LOL', len(self.data))
+
 
 class OpenFile(QWidget):
     changed_path = Signal(str)
@@ -244,8 +262,6 @@ class PlotWidget(QWidget):
         #  create widgets
         self.plot_fig = FigureCanvas(Figure(figsize=(5, 3)))
         self.gal_fig = FigureCanvas(Figure(figsize=(5, 3)))
-        # self.axes_plot = self.rc_graph.figure.subplots()
-# self.axes_gal = self.gal_image.figure.subplots(subplot_kw={'projection': wcs})
         self.toolbar_plot = NavigationToolbar2QT(self.plot_fig, self)
         self.toolbar_gal = NavigationToolbar2QT(self.gal_fig, self)
         self.image_field = OpenFile(text='image', mode='o')
@@ -278,23 +294,23 @@ class PlotWidget(QWidget):
         glayout.addWidget(self.gal_fig, 1, 1)
         glayout.addLayout(left_layout, 2, 0)
         glayout.addLayout(right_layout, 2, 1)
-        # glayout.addWidget(self.csv_field, 2, 0)
-        # glayout.addWidget(self.image_field, 2, 1)
-        # glayout.addWidget(self.i_input, 3, 0)
-        # glayout.addWidget(self.PA_input, 3, 1)
-        # glayout.addWidget(self.ra_input, 4, 0)
-        # glayout.addWidget(self.dec_input, 4, 1)
-        # glayout.addWidget(self.vel_input, 5, 0)
-        # glayout.addWidget(self.redraw_button, 5, 1)
-
         self.setLayout(glayout)
 
-        # connect inputs with on_change method
-        # self.mu_input.valueChanged.connect(self.on_change)
-        # self.std_input.valueChanged.connect(self.on_change)
-        self.redraw_button.clicked.connect(self.redraw)
+        self.gal_changed = False
+        self.csv_changed = False
+        self.galIm = None
 
-        # plot_galaxy(self.axes_gal, image_file)
+        self.redraw_button.clicked.connect(self.redraw)
+        self.csv_field.changed_path.connect(self.csvChanged)
+        self.image_field.changed_path.connect(self.galChanged)
+
+    @Slot()
+    def galChanged(self):
+        self.gal_changed = True
+
+    @Slot()
+    def csvChanged(self):
+        self.csv_changed = True
 
     @Slot()
     def redraw(self):
@@ -315,15 +331,15 @@ class PlotWidget(QWidget):
                 rel_slits.append(rel_slit)
                 masks.append(mask)
 
-        if self.image is not None:
-            wcs = WCS(self.image.header)
-            self.axes_gal = self.gal_fig.figure.subplots(
-                subplot_kw={'projection': wcs})
-            plot_galaxy(self.axes_gal, self.image, gal_frame=self.gal_frame)
+        if self.gal_changed:
+            image = fits.open(self.image_field.files)[0]
+            self.galIm = galaxyImage(self.gal_fig.figure, image)
+            self.galIm.plot_galaxy(self.gal_frame)
             if self.data is not None:
                 for rel_slit, mask in zip(rel_slits, masks):
-                    plot_slit_points(self.axes_gal, rel_slit, mask,
+                    plot_slit_points(self.galIm.axes_gal, rel_slit, mask,
                                      self.gal_frame)
+            self.gal_changed = False
 
         self.gal_fig.draw()
         self.plot_fig.draw()
@@ -337,15 +353,6 @@ class PlotWidget(QWidget):
         self.sys_vel = self.vel_input.value()
         self.gal_frame = self.gal_center.skyoffset_frame(rotation=self.PA)
         print(self.gal_frame)
-
-        self.image_name = self.image_field.files
-        if self.image_name is not None:
-            self.image = fits.open(self.image_name)[0]
-            self.wcs = WCS(self.image.header)
-            print(self.wcs)
-        else:
-            self.image = None
-            self.wcs = None
 
         self.csv_name = self.csv_field.files
         if self.csv_name is not None:
