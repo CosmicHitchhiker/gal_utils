@@ -23,9 +23,15 @@ def bin_coords(bins, coords):
 
 def get_radec(pos, hdr):
     slit_center = SkyCoord(hdr['RA'], hdr['DEC'], unit=(u.hourangle, u.deg))
-    slit_ra = slit_center.ra + pos * u.arcsec * np.sin(hdr['POSANG'])
-    slit_dec = slit_center.dec + pos * u.arcsec * np.cos(hdr['POSANG'])
-    slit = SkyCoord(slit_ra, slit_dec, frame='icrs')
+    slit_frame = slit_center.skyoffset_frame(rotation=hdr['POSANG'] * u.deg)
+
+    rel_lat = pos * u.arcsec
+    rel_lon = 0 * pos * u.arcsec
+    slit_points = SkyCoord(rel_lon, rel_lat, frame=slit_frame)
+    # slit_ra = slit_center.ra + pos * u.arcsec * np.sin(hdr['POSANG'])
+    # slit_dec = slit_center.dec + pos * u.arcsec * np.cos(hdr['POSANG'])
+    # slit = SkyCoord(slit_ra, slit_dec, frame='icrs')
+    slit = slit_points.transform_to('icrs')
     slit_ra = slit.ra.to_string(unit=u.hourangle, sep=':')
     slit_dec = slit.dec.to_string(unit=u.deg, sep=':')
     return slit_ra, slit_dec
