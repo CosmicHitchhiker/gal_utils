@@ -12,6 +12,8 @@ from astropy.io import fits
 
 def plot_galaxy(image, gal_frame, rel_slit, obj_name=None, masks=None):
     wcs = WCS(image.header)
+    print(wcs)
+    print(gal_frame)
     plt.figure()
     ax = plt.subplot(projection=wcs)
     overlay = ax.get_coords_overlay(gal_frame)
