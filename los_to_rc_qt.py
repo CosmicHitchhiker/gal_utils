@@ -66,7 +66,7 @@ def plot_slit_points(ax, rel_slit, masks=None, gal_frame=None):
                 linestyle='', transform=ax.get_transform(gal_frame))
 
 
-def los_to_rc(data, gal_center, gal_PA, inclination, sys_vel, ax=None,
+def los_to_rc(data, gal_frame, inclination, sys_vel, ax=None,
               obj_name=None, verr_lim=200):
     H0 = 70 / (1e+6 * u.parsec)
     slit_ra = data['RA']
@@ -75,7 +75,8 @@ def los_to_rc(data, gal_center, gal_PA, inclination, sys_vel, ax=None,
     slit = SkyCoord(slit_ra, slit_dec, frame='icrs', unit=(u.hourangle, u.deg))
 
     # gal_PA большой полуоси, туда будет направлена ось "широт"
-    gal_frame = gal_center.skyoffset_frame(rotation=gal_PA)
+    # gal_frame = gal_center.skyoffset_frame(rotation=gal_PA)
+    gal_center = SkyCoord(0 * u.deg, 0 * u.deg, frame=gal_frame)
     rel_slit = slit.transform_to(gal_frame)
 
     dist = sys_vel / H0
@@ -132,11 +133,27 @@ class galaxyImage():
         self.gal_frame = gal_frame
         plot_galaxy(self.axes_gal, self.image, self.gal_frame)
 
+    def plot_slit(self, rel_slits, masks):
+        for rel_slit, mask in zip(rel_slits, masks):
+            plot_slit_points(self.axes_gal, rel_slit, mask,
+                             self.gal_frame)
+            print('I am heres')
+
 
 class csvPlot():
-    def __init__(self, data):
+    def __init__(self, data, figure):
         self.data = data
-        print('LOL', len(self.data))
+        self.axes_plot = figure.subplots()
+
+    def plot_rc(self, gal_frame, inclination, sys_vel):
+        self.rel_slits = []
+        self.masks = []
+        for dat in self.data:
+            rel_slit, mask = los_to_rc(dat, gal_frame, inclination, sys_vel,
+                                       ax=self.axes_plot)
+            self.rel_slits.append(rel_slit)
+            self.masks.append(mask)
+        return self.rel_slits, self.masks
 
 
 class OpenFile(QWidget):
@@ -343,32 +360,23 @@ class PlotWidget(QWidget):
         """ Update the plot with the current input values """
         self.updateValues()
 
-        self.plot_fig.figure.clear()
-
-        if self.csv_changed:
-            self.csvGraph = csvPlot([pd.read_csv(x) for x in self.csv_name])
-
-        if self.data is not None:
-            self.axes_plot = self.plot_fig.figure.subplots()
-            rel_slits = []
-            masks = []
-            for dat in self.data:
-                rel_slit, mask = los_to_rc(dat, self.gal_center, self.PA,
-                                           self.inclination, self.sys_vel,
-                                           ax=self.axes_plot)
-                rel_slits.append(rel_slit)
-                masks.append(mask)
-
         if self.gal_changed:
             self.gal_fig.figure.clear()
             image = fits.open(self.image_field.files)[0]
             self.galIm = galaxyImage(self.gal_fig.figure, image)
             self.galIm.plot_galaxy(self.gal_frame)
-            if self.data is not None:
-                for rel_slit, mask in zip(rel_slits, masks):
-                    plot_slit_points(self.galIm.axes_gal, rel_slit, mask,
-                                     self.gal_frame)
             self.gal_changed = False
+
+        if self.csv_changed:
+            self.plot_fig.figure.clear()
+            self.csvGraph = csvPlot([pd.read_csv(x) for x in self.csv_name],
+                                    self.plot_fig.figure)
+            rel_slits, masks = self.csvGraph.plot_rc(self.gal_frame,
+                                                     self.inclination,
+                                                     self.sys_vel)
+            if self.galIm is not None:
+                self.galIm.plot_slit(rel_slits, masks)
+            self.csv_changed = False
 
         self.gal_fig.draw()
         self.plot_fig.draw()
