@@ -266,7 +266,10 @@ def main(args=None):
     hdr = fits.getheader(pargs.spectrum)
 
     radec_slit = [Angle(hdr['RA'] + ' hours'), Angle(hdr['DEC'] + ' degrees')]
-    slit_width = parse_tds_slit(hdr['SLIT'])
+    if 'SLIT' in hdr:
+        slit_width = parse_tds_slit(hdr['SLIT'])
+    else:
+        slit_width = 1.0
 
     radec_slit[0] += pargs.ra_corr * u.arcsec
     radec_slit[1] += pargs.dec_corr * u.arcsec
