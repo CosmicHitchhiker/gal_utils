@@ -236,6 +236,8 @@ class OpenFile(QWidget):
 
 
 class radecSpinBox(QAbstractSpinBox):
+    valueChanged = Signal(Angle)
+
     def __init__(self, parent=None, radec='dec', value=0):
         super().__init__(parent)
 
@@ -262,6 +264,7 @@ class radecSpinBox(QAbstractSpinBox):
         text = self.text()
         self.angle = Angle(text, unit=self.unit)
         self.line.setText(self.textFromValue(self.angle.value))
+        self.valueChanged.emit(self.angle)
         return self.angle.value
 
     def stepEnabled(self):
@@ -273,7 +276,7 @@ class radecSpinBox(QAbstractSpinBox):
     def stepBy(self, steps):
         self.angle += steps * Angle('0:0:0.1', unit=self.unit)
         self.line.setText(self.textFromValue(self.angle.value))
-        print(self.angle)
+        self.valueChanged.emit(self.angle)
 
     def getAngle(self):
         return self.angle
@@ -281,6 +284,7 @@ class radecSpinBox(QAbstractSpinBox):
     def setValue(self, value):
         self.angle = Angle(value, unit=self.unit)
         self.line.setText(self.textFromValue(self.angle.value))
+        self.valueChanged.emit(self.angle)
 
 
 class PlotWidget(QWidget):
@@ -309,19 +313,24 @@ class PlotWidget(QWidget):
             self.csv_changed = True
 
         self.i_input = QDoubleSpinBox()
+        self.i_input.setKeyboardTracking(False)
         self.i_input.setValue(inclination)
 
         self.PA_input = QDoubleSpinBox()
+        self.PA_input.setKeyboardTracking(False)
         self.PA_input.setMaximum(360.0)
         self.PA_input.setValue(PA)
 
         self.ra_input = radecSpinBox(radec='ra')
         self.dec_input = radecSpinBox(radec='dec')
+        self.ra_input.setKeyboardTracking(False)
+        self.dec_input.setKeyboardTracking(False)
         if refcenter is not None:
             self.ra_input.setValue(refcenter[0])
             self.dec_input.setValue(refcenter[1])
 
         self.vel_input = QDoubleSpinBox()
+        self.vel_input.setKeyboardTracking(False)
         self.vel_input.setMaximum(500000)
         self.vel_input.setValue(velocity)
 
@@ -353,7 +362,9 @@ class PlotWidget(QWidget):
         self.redraw_button.clicked.connect(self.redraw)
         self.csv_field.changed_path.connect(self.csvChanged)
         self.image_field.changed_path.connect(self.galChanged)
-        self.PA_input.valueChanged.connect(self.paChanged)
+        self.PA_input.valueChanged.connect(self.galFrameChanged)
+        self.ra_input.valueChanged.connect(self.galFrameChanged)
+        self.dec_input.valueChanged.connect(self.galFrameChanged)
 
     @Slot()
     def galChanged(self):
@@ -364,14 +375,10 @@ class PlotWidget(QWidget):
         self.csv_changed = True
 
     @Slot()
-    def paChanged(self):
-        b = time.time()
+    def galFrameChanged(self):
         self.updateValues()
-        print(time.time() - b)
         self.galIm.plot_galaxy(self.gal_frame)
-        print(time.time() - b)
         self.gal_fig.draw()
-        print(time.time() - b)
 
     @Slot()
     def redraw(self):
