@@ -46,16 +46,11 @@ def plot_slit_points(ax, rel_slit, masks=None, gal_frame=None):
                 linestyle='', transform=ax.get_transform(gal_frame))
 
 
-def los_to_rc(data, gal_frame, inclination, sys_vel, ax=None,
+def los_to_rc(data, slit, gal_frame, inclination, sys_vel,
               obj_name=None, verr_lim=200):
     H0 = 70 / (1e+6 * u.parsec)
-    slit_ra = data['RA']
-    slit_dec = data['DEC']
     slit_pos = data['position']
-    slit = SkyCoord(slit_ra, slit_dec, frame='icrs', unit=(u.hourangle, u.deg))
 
-    # gal_PA большой полуоси, туда будет направлена ось "широт"
-    # gal_frame = gal_center.skyoffset_frame(rotation=gal_PA)
     gal_center = SkyCoord(0 * u.deg, 0 * u.deg, frame=gal_frame)
     rel_slit = slit.transform_to(gal_frame)
 
@@ -91,15 +86,13 @@ def los_to_rc(data, gal_frame, inclination, sys_vel, ax=None,
     first_side_mask = (first_side & mask)
     second_side_mask = (second_side & mask)
 
-    # plt.ylim(-70, 140)
-    ax.set_ylabel('Radial Velocity, km/s')
-    ax.set_xlabel('R, parsec')
-    ax.errorbar(R_slit[first_side_mask] / u.parsec, -vel_r[first_side_mask],
-                yerr=vel_r_err[first_side_mask], linestyle='', marker='.')
-    ax.errorbar(R_slit[second_side_mask] / u.parsec, -vel_r[second_side_mask],
-                yerr=vel_r_err[second_side_mask], linestyle='', marker='.')
+    data['Radial_v'] = -vel_r
+    data['Radial_v_err'] = vel_r_err
+    data['R'] = R_slit / u.parsec
+    data['mask1'] = np.array(first_side_mask, dtype=bool)
+    data['mask2'] = np.array(second_side_mask, dtype=bool)
 
-    return slit, [first_side_mask, second_side_mask]
+    return data
 
 
 class galaxyImage():
@@ -149,17 +142,54 @@ class galaxyImage():
 class csvPlot():
     def __init__(self, data, figure):
         self.data = data
+        self.slits = []
+        for dat in self.data:
+            slit_ra = dat['RA']
+            slit_dec = dat['DEC']
+            self.slits.append(SkyCoord(slit_ra, slit_dec, frame='icrs',
+                                       unit=(u.hourangle, u.deg)))
         self.axes_plot = figure.subplots()
 
-    def plot_rc(self, gal_frame, inclination, sys_vel):
-        self.rel_slits = []
+    def calc_rc(self, gal_frame, inclination, sys_vel):
         self.masks = []
-        for dat in self.data:
-            rel_slit, mask = los_to_rc(dat, gal_frame, inclination, sys_vel,
-                                       ax=self.axes_plot)
-            self.rel_slits.append(rel_slit)
-            self.masks.append(mask)
-        return self.rel_slits, self.masks
+        for dat, slit in zip(self.data, self.slits):
+            dat = los_to_rc(dat, slit, gal_frame, inclination, sys_vel)
+            self.masks.append([dat['mask1'].to_numpy(),
+                               dat['mask2'].to_numpy()])
+        print(self.data)
+        self.plot_rc()
+        return self.slits, self.masks
+
+    def plot_rc(self):
+        self.axes_plot.set_ylabel('Radial Velocity, km/s')
+        self.axes_plot.set_xlabel('R, parsec')
+        for dat, mask in zip(self.data, self.masks):
+            verr = dat['Radial_v_err'].to_numpy()
+            mask1, mask2 = mask
+            self.axes_plot.errorbar(
+                dat['R'][mask1],
+                dat['Radial_v'][mask1],
+                yerr=verr[mask1],
+                linestyle='',
+                marker='.')
+            self.axes_plot.errorbar(
+                dat['R'][mask2],
+                dat['Radial_v'][mask2],
+                yerr=verr[mask2],
+                linestyle='',
+                marker='.')
+            # self.axes_plot.errorbar(
+            #     dat['R'][dat['mask1']],
+            #     dat['Radial_v'][dat['mask1']],
+            #     yerr=dat['Radial_v_err'][dat['mask1']],
+            #     linestyle='',
+            #     marker='.')
+            # self.axes_plot.errorbar(
+            #     dat['R'][dat['mask2']],
+            #     dat['Radial_v'][dat['mask2']],
+            #     yerr=dat['Radial_v_err'][dat['mask2']],
+            #     linestyle='',
+            #     marker='.')
 
 
 class OpenFile(QWidget):
@@ -396,7 +426,7 @@ class PlotWidget(QWidget):
             self.plot_fig.figure.clear()
             data = [pd.read_csv(x) for x in self.csv_field.files]
             self.csvGraph = csvPlot(data, self.plot_fig.figure)
-            slits, masks = self.csvGraph.plot_rc(self.gal_frame,
+            slits, masks = self.csvGraph.calc_rc(self.gal_frame,
                                                  self.inclination,
                                                  self.sys_vel)
             if self.galIm is not None:
