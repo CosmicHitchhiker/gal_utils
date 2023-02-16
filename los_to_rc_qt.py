@@ -124,7 +124,6 @@ class galaxyImage():
         self.axes_gal.coords['dec'].set_ticks(color='white')
 
         if gal_frame is not None:
-            print('LOOOL')
             self.gal_frame = gal_frame
             self.overlay = self.axes_gal.get_coords_overlay(gal_frame)
             # "Стираем" чёрточки по краям картинки
@@ -220,7 +219,6 @@ class OpenFile(QWidget):
             ext = files_path.split('.')
             if len(ext) < 2:
                 files_path = files_path + '.fits'
-            # print(files_path)
 
         if files_path:
             if self.mode == 'n':
@@ -246,8 +244,10 @@ class radecSpinBox(QAbstractSpinBox):
 
         if radec == 'dec':
             self.unit = u.deg
+            self.step = Angle('0:0:1', unit=u.deg)
         elif radec == 'ra':
             self.unit = u.hourangle
+            self.step = Angle('0:0:0.1', unit=u.hourangle)
 
         self.setAccelerated(True)
         self.angle = Angle(value, unit=self.unit)
@@ -274,7 +274,7 @@ class radecSpinBox(QAbstractSpinBox):
         return ret
 
     def stepBy(self, steps):
-        self.angle += steps * Angle('0:0:0.1', unit=self.unit)
+        self.angle += steps * self.step
         self.line.setText(self.textFromValue(self.angle.value))
         self.valueChanged.emit(self.angle)
 
@@ -394,11 +394,11 @@ class PlotWidget(QWidget):
 
         if self.csv_changed:
             self.plot_fig.figure.clear()
-            self.csvGraph = csvPlot([pd.read_csv(x) for x in self.csv_name],
-                                    self.plot_fig.figure)
+            data = [pd.read_csv(x) for x in self.csv_field.files]
+            self.csvGraph = csvPlot(data, self.plot_fig.figure)
             slits, masks = self.csvGraph.plot_rc(self.gal_frame,
-                                                     self.inclination,
-                                                     self.sys_vel)
+                                                 self.inclination,
+                                                 self.sys_vel)
             if self.galIm is not None:
                 self.galIm.plot_slit(slits, masks)
             self.csv_changed = False
@@ -414,13 +414,6 @@ class PlotWidget(QWidget):
                                    frame='icrs')
         self.sys_vel = self.vel_input.value()
         self.gal_frame = self.gal_center.skyoffset_frame(rotation=self.PA)
-        print(self.gal_frame)
-
-        self.csv_name = self.csv_field.files
-        if self.csv_name is not None:
-            self.data = [pd.read_csv(x) for x in self.csv_name]
-        else:
-            self.data = None
 
 
 if __name__ == "__main__":
