@@ -14,6 +14,7 @@ from astropy.wcs import WCS
 import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
 import pandas as pd
+import time
 
 # from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
@@ -36,33 +37,12 @@ from PySide6.QtWidgets import (
 matplotlib.use('QtAgg')
 
 
-def plot_galaxy(ax, image, gal_frame=None):
-    overlay = ax.get_coords_overlay(gal_frame)
-
-    # "Стираем" чёрточки по краям картинки
-    ax.coords['ra'].set_ticks(color='white')
-    ax.coords['dec'].set_ticks(color='white')
-
-    # # "Стираем" чёрточки по краям картинки
-    overlay['lon'].set_ticks(color='white')
-    overlay['lat'].set_ticks(color='white')
-
-    # # Подпись условных осей в системе координат галактики
-    overlay['lon'].set_axislabel('rel_lon')
-    overlay['lat'].set_axislabel('rel_lat')
-
-    overlay.grid(color='white', linestyle='solid', alpha=0.5)
-
-    norm_im = simple_norm(image.data, 'linear', percent=99.3)
-    ax.imshow(image.data, cmap='bone', norm=norm_im)
-
-
 def plot_slit_points(ax, rel_slit, masks=None, gal_frame=None):
     if masks is None:
         masks = [np.ones(len(rel_slit)).astype(bool)]
 
     for mask in masks:
-        ax.plot(rel_slit.lon[mask], rel_slit.lat[mask], marker='.',
+        ax.plot(rel_slit.ra[mask], rel_slit.dec[mask], marker='.',
                 linestyle='', transform=ax.get_transform(gal_frame))
 
 
@@ -119,25 +99,52 @@ def los_to_rc(data, gal_frame, inclination, sys_vel, ax=None,
     ax.errorbar(R_slit[second_side_mask] / u.parsec, -vel_r[second_side_mask],
                 yerr=vel_r_err[second_side_mask], linestyle='', marker='.')
 
-    return rel_slit, [first_side_mask, second_side_mask]
+    return slit, [first_side_mask, second_side_mask]
 
 
 class galaxyImage():
     def __init__(self, figure, image):
         self.wcs = WCS(image.header)
+        self.figure = figure
         self.axes_gal = figure.subplots(
             subplot_kw={'projection': self.wcs})
         self.image = image
+        self.norm_im = simple_norm(image.data, 'linear', percent=99.3)
+        self.slits = None
+        self.masks = None
+        self.plot_galaxy()
 
-    def plot_galaxy(self, gal_frame):
-        self.gal_frame = gal_frame
-        plot_galaxy(self.axes_gal, self.image, self.gal_frame)
+    def plot_galaxy(self, gal_frame=None):
+        self.axes_gal.clear()
+        self.axes_gal = self.figure.subplots(
+            subplot_kw={'projection': self.wcs})
+        self.axes_gal.imshow(self.image.data, cmap='bone', norm=self.norm_im)
+        # "Стираем" чёрточки по краям картинки
+        self.axes_gal.coords['ra'].set_ticks(color='white')
+        self.axes_gal.coords['dec'].set_ticks(color='white')
 
-    def plot_slit(self, rel_slits, masks):
-        for rel_slit, mask in zip(rel_slits, masks):
-            plot_slit_points(self.axes_gal, rel_slit, mask,
-                             self.gal_frame)
-            print('I am heres')
+        if gal_frame is not None:
+            print('LOOOL')
+            self.gal_frame = gal_frame
+            self.overlay = self.axes_gal.get_coords_overlay(gal_frame)
+            # "Стираем" чёрточки по краям картинки
+            self.overlay['lon'].set_ticks(color='white')
+            self.overlay['lat'].set_ticks(color='white')
+            self.overlay['lon'].set_ticklabel(alpha=0)
+            self.overlay['lat'].set_ticklabel(alpha=0)
+            self.overlay.grid(color='white', linestyle='solid', alpha=0.5)
+
+        if self.slits is not None:
+            self.plot_slit(self.slits, self.masks)
+
+        # plot_galaxy(self.axes_gal, self.image, self.gal_frame)
+
+    def plot_slit(self, slits, masks):
+        self.slits = slits
+        self.masks = masks
+        for slit, mask in zip(slits, masks):
+            plot_slit_points(self.axes_gal, slit, mask,
+                             'icrs')
 
 
 class csvPlot():
@@ -346,6 +353,7 @@ class PlotWidget(QWidget):
         self.redraw_button.clicked.connect(self.redraw)
         self.csv_field.changed_path.connect(self.csvChanged)
         self.image_field.changed_path.connect(self.galChanged)
+        self.PA_input.valueChanged.connect(self.paChanged)
 
     @Slot()
     def galChanged(self):
@@ -354,6 +362,16 @@ class PlotWidget(QWidget):
     @Slot()
     def csvChanged(self):
         self.csv_changed = True
+
+    @Slot()
+    def paChanged(self):
+        b = time.time()
+        self.updateValues()
+        print(time.time() - b)
+        self.galIm.plot_galaxy(self.gal_frame)
+        print(time.time() - b)
+        self.gal_fig.draw()
+        print(time.time() - b)
 
     @Slot()
     def redraw(self):
@@ -371,11 +389,11 @@ class PlotWidget(QWidget):
             self.plot_fig.figure.clear()
             self.csvGraph = csvPlot([pd.read_csv(x) for x in self.csv_name],
                                     self.plot_fig.figure)
-            rel_slits, masks = self.csvGraph.plot_rc(self.gal_frame,
+            slits, masks = self.csvGraph.plot_rc(self.gal_frame,
                                                      self.inclination,
                                                      self.sys_vel)
             if self.galIm is not None:
-                self.galIm.plot_slit(rel_slits, masks)
+                self.galIm.plot_slit(slits, masks)
             self.csv_changed = False
 
         self.gal_fig.draw()
