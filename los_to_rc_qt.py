@@ -14,7 +14,7 @@ from astropy.wcs import WCS
 import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
 import pandas as pd
-import time
+from itertools import zip_longest, chain
 
 # from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
@@ -37,10 +37,9 @@ from PySide6.QtWidgets import (
 matplotlib.use('QtAgg')
 
 
-def plot_slit_points(ax, rel_slit, masks=None, gal_frame=None):
+def plot_slit_points(ax, rel_slit, masks=None, gal_frame=None, line=None):
     if masks is None:
         masks = [np.ones(len(rel_slit)).astype(bool)]
-
     for mask in masks:
         ax.plot(rel_slit.ra[mask], rel_slit.dec[mask], marker='.',
                 linestyle='', transform=ax.get_transform(gal_frame))
@@ -105,6 +104,7 @@ class galaxyImage():
         self.norm_im = simple_norm(image.data, 'linear', percent=99.3)
         self.slits = None
         self.masks = None
+        self.slit_draws = None
         self.plot_galaxy()
 
     def plot_galaxy(self, gal_frame=None):
@@ -134,9 +134,11 @@ class galaxyImage():
     def plot_slit(self, slits, masks):
         self.slits = slits
         self.masks = masks
+        for line in self.axes_gal.lines:
+            self.axes_gal.lines.remove(line)
+
         for slit, mask in zip(slits, masks):
-            plot_slit_points(self.axes_gal, slit, mask,
-                             'icrs')
+            plot_slit_points(self.axes_gal, slit, mask, 'icrs')
 
 
 class csvPlot():
@@ -151,12 +153,12 @@ class csvPlot():
         self.axes_plot = figure.subplots()
 
     def calc_rc(self, gal_frame, inclination, sys_vel):
+        self.axes_plot.clear()
         self.masks = []
         for dat, slit in zip(self.data, self.slits):
             dat = los_to_rc(dat, slit, gal_frame, inclination, sys_vel)
             self.masks.append([dat['mask1'].to_numpy(),
                                dat['mask2'].to_numpy()])
-        print(self.data)
         self.plot_rc()
         return self.slits, self.masks
 
@@ -178,18 +180,6 @@ class csvPlot():
                 yerr=verr[mask2],
                 linestyle='',
                 marker='.')
-            # self.axes_plot.errorbar(
-            #     dat['R'][dat['mask1']],
-            #     dat['Radial_v'][dat['mask1']],
-            #     yerr=dat['Radial_v_err'][dat['mask1']],
-            #     linestyle='',
-            #     marker='.')
-            # self.axes_plot.errorbar(
-            #     dat['R'][dat['mask2']],
-            #     dat['Radial_v'][dat['mask2']],
-            #     yerr=dat['Radial_v_err'][dat['mask2']],
-            #     linestyle='',
-            #     marker='.')
 
 
 class OpenFile(QWidget):
@@ -395,6 +385,8 @@ class PlotWidget(QWidget):
         self.PA_input.valueChanged.connect(self.galFrameChanged)
         self.ra_input.valueChanged.connect(self.galFrameChanged)
         self.dec_input.valueChanged.connect(self.galFrameChanged)
+        self.vel_input.valueChanged.connect(self.kinematicsChanged)
+        self.i_input.valueChanged.connect(self.kinematicsChanged)
 
     @Slot()
     def galChanged(self):
@@ -408,7 +400,15 @@ class PlotWidget(QWidget):
     def galFrameChanged(self):
         self.updateValues()
         self.galIm.plot_galaxy(self.gal_frame)
+        self.csvGraph.calc_rc(self.gal_frame, self.inclination, self.sys_vel)
         self.gal_fig.draw()
+        self.plot_fig.draw()
+
+    @Slot()
+    def kinematicsChanged(self):
+        self.updateValues()
+        self.csvGraph.calc_rc(self.gal_frame, self.inclination, self.sys_vel)
+        self.plot_fig.draw()
 
     @Slot()
     def redraw(self):
@@ -430,6 +430,7 @@ class PlotWidget(QWidget):
                                                  self.inclination,
                                                  self.sys_vel)
             if self.galIm is not None:
+                self.galIm.plot_galaxy(self.gal_frame)
                 self.galIm.plot_slit(slits, masks)
             self.csv_changed = False
 
