@@ -378,6 +378,9 @@ class PlotWidget(QWidget):
         glayout.addWidget(self.gal_fig, 1, 1)
         glayout.addLayout(left_layout, 2, 0)
         glayout.addLayout(right_layout, 2, 1)
+        glayout.setRowStretch(0, 0)
+        glayout.setRowStretch(1, 1)
+        glayout.setRowStretch(2, 0)
         self.setLayout(glayout)
 
         self.galIm = None
