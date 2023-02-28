@@ -41,8 +41,9 @@ def plot_slit_points(ax, rel_slit, masks=None, gal_frame=None, line=None):
     if masks is None:
         masks = [np.ones(len(rel_slit)).astype(bool)]
     for mask in masks:
-        ax.plot(rel_slit.ra[mask], rel_slit.dec[mask], marker='.',
-                linestyle='', transform=ax.get_transform(gal_frame))
+        if len(mask[mask]) > 0:
+            ax.plot(rel_slit.ra[mask], rel_slit.dec[mask], marker='.',
+                    linestyle='', transform=ax.get_transform(gal_frame))
 
 
 def los_to_rc(data, slit, gal_frame, inclination, sys_vel,
@@ -168,18 +169,20 @@ class csvPlot():
         for dat, mask in zip(self.data, self.masks):
             verr = dat['Radial_v_err'].to_numpy()
             mask1, mask2 = mask
-            self.axes_plot.errorbar(
-                dat['R'][mask1],
-                dat['Radial_v'][mask1],
-                yerr=verr[mask1],
-                linestyle='',
-                marker='.')
-            self.axes_plot.errorbar(
-                dat['R'][mask2],
-                dat['Radial_v'][mask2],
-                yerr=verr[mask2],
-                linestyle='',
-                marker='.')
+            if len(mask1[mask1]) > 0:
+                self.axes_plot.errorbar(
+                    dat['R'][mask1],
+                    dat['Radial_v'][mask1],
+                    yerr=verr[mask1],
+                    linestyle='',
+                    marker='.')
+            if len(mask2[mask2]) > 0:
+                self.axes_plot.errorbar(
+                    dat['R'][mask2],
+                    dat['Radial_v'][mask2],
+                    yerr=verr[mask2],
+                    linestyle='',
+                    marker='.')
 
 
 class OpenFile(QWidget):
