@@ -14,7 +14,8 @@ from astropy.wcs import WCS
 import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
 import pandas as pd
-from itertools import zip_longest, chain
+# from itertools import zip_longest, chain
+from matplotlib import colormaps
 
 # from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
@@ -75,6 +76,16 @@ def los_to_rc(data, slit, gal_frame, inclination, sys_vel,
     vel_r_err = np.abs(vel_lon_err / np.cos(slit_gal_PA))
 
     mask = (vel_r_err < verr_lim)
+    mask_center = (Separation.to(u.arcsec) > 5 * u.arcsec)
+    cone_angle = 20 * u.deg
+    mask_cone_1 = (slit_gal_PA > 90 * u.deg - cone_angle) & \
+                  (slit_gal_PA < 90 * u.deg + cone_angle)
+    mask_cone_2 = (slit_gal_PA > 270 * u.deg - cone_angle) & \
+                  (slit_gal_PA < 270 * u.deg + cone_angle)
+    mask_cone = ~(mask_cone_1 | mask_cone_2)
+    mask = mask & mask_center
+    mask = mask & mask_cone
+
 
     # lat = np.array(rel_slit_corr.lat.to(u.arcsec)/u.arcsec)
     # minor_ax = np.argmin(np.abs(lat))
@@ -97,6 +108,7 @@ def los_to_rc(data, slit, gal_frame, inclination, sys_vel,
 
 class galaxyImage():
     def __init__(self, figure, image):
+        self.colors = colormaps['tab20'](np.linspace(0, 1, 20))
         self.wcs = WCS(image.header)
         self.figure = figure
         self.axes_gal = figure.subplots(
@@ -138,12 +150,31 @@ class galaxyImage():
         for line in self.axes_gal.lines:
             self.axes_gal.lines.remove(line)
 
-        for slit, mask in zip(slits, masks):
-            plot_slit_points(self.axes_gal, slit, mask, 'icrs')
+        for slit, mask, i in zip(slits, masks, range(0, 20, 2)):
+            print(i)
+            print(i + 1)
+            mask1, mask2 = mask
+            if len(mask1[mask1]) > 0:
+                self.axes_gal.plot(
+                    slit.ra[mask1],
+                    slit.dec[mask1],
+                    marker='.',
+                    linestyle='',
+                    transform=self.axes_gal.get_transform('icrs'),
+                    color=self.colors[i])
+            if len(mask2[mask2]) > 0:
+                self.axes_gal.plot(
+                    slit.ra[mask2],
+                    slit.dec[mask2],
+                    marker='.',
+                    linestyle='',
+                    transform=self.axes_gal.get_transform('icrs'),
+                    color=self.colors[i + 1])
 
 
 class csvPlot():
     def __init__(self, data, figure):
+        self.colors = colormaps['tab20'](np.linspace(0, 1, 20))
         self.data = data
         self.slits = []
         for dat in self.data:
@@ -166,7 +197,7 @@ class csvPlot():
     def plot_rc(self):
         self.axes_plot.set_ylabel('Radial Velocity, km/s')
         self.axes_plot.set_xlabel('R, parsec')
-        for dat, mask in zip(self.data, self.masks):
+        for dat, mask, i in zip(self.data, self.masks, range(0, 20, 2)):
             verr = dat['Radial_v_err'].to_numpy()
             mask1, mask2 = mask
             if len(mask1[mask1]) > 0:
@@ -175,14 +206,16 @@ class csvPlot():
                     dat['Radial_v'][mask1],
                     yerr=verr[mask1],
                     linestyle='',
-                    marker='.')
+                    marker='.',
+                    color=self.colors[i])
             if len(mask2[mask2]) > 0:
                 self.axes_plot.errorbar(
                     dat['R'][mask2],
                     dat['Radial_v'][mask2],
                     yerr=verr[mask2],
                     linestyle='',
-                    marker='.')
+                    marker='.',
+                    color=self.colors[i + 1])
 
 
 class OpenFile(QWidget):
@@ -406,7 +439,9 @@ class PlotWidget(QWidget):
     def galFrameChanged(self):
         self.updateValues()
         self.galIm.plot_galaxy(self.gal_frame)
-        self.csvGraph.calc_rc(self.gal_frame, self.inclination, self.sys_vel)
+        slits, masks = self.csvGraph.calc_rc(self.gal_frame, self.inclination,
+                                             self.sys_vel)
+        self.galIm.plot_slit(slits, masks)
         self.gal_fig.draw()
         self.plot_fig.draw()
 
