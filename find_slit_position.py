@@ -11,6 +11,7 @@ from scipy import optimize
 import astropy.units as u
 from astropy.visualization import simple_norm
 from astropy.coordinates import FK5
+import scipy.signal as sig
 
 
 def myinterp(x_new, x, f):
@@ -29,13 +30,21 @@ def correlation(vec1, vec2):
     return(np.arccos(np.sum(vec1 * vec2)))
 
 
+def prepare_spec(spec):
+    spec_filt = sig.medfilt(spec, 7)
+    spec_new = spec - spec_filt.min()
+    spec_new[spec_new < 0] = 0
+    return spec_new
+
+
 def Qfunc3(xys0, img, slit0, imgscale, wy=1.5, crpix2=256, spec_x=None,
            verbose=False):
     # Slit is horizontal on image
     wy = np.abs(0.5 * wy / imgscale)
     x0, y0, slitscale = xys0
     # slitscale *= np.sign(imgscale)
-    slit = norm_vector(slit0.copy())
+    slit = prepare_spec(slit0.copy())
+    slit = norm_vector(slit)
     if spec_x is None:
         spec_x = np.arange(len(slit))
 
@@ -58,7 +67,7 @@ def Qfunc3(xys0, img, slit0, imgscale, wy=1.5, crpix2=256, spec_x=None,
     # print(img_x)
 
     img_reg = myinterp(slit_x, img_x, img_reg)
-    img_reg = img_reg - img_reg.min()
+    img_reg = prepare_spec(img_reg)
     # print(img_reg)
     img_reg = norm_vector(img_reg)
     if verbose:
@@ -98,6 +107,7 @@ def dxdy_setup(img, slit, imgscale, slitscale, xy_center, wy=1.5, crpix2=256,
         params = argparse.ArgumentParser(exit_on_error=False)
         params.add_argument('-dx', type=float, default=dx)
         params.add_argument('-dy', type=float, default=dy)
+        params.add_argument('-i', type=float, default=imgscale)
         parags = params.parse_args('')
         print(parags)
         need_to_change = input("Change any parameters?(leave blank if No)")
@@ -105,8 +115,9 @@ def dxdy_setup(img, slit, imgscale, slitscale, xy_center, wy=1.5, crpix2=256,
             parags = params.parse_args(need_to_change.split())
             dx = parags.dx
             dy = parags.dy
+            imgscale = parags.i
 
-    return dx, dy
+    return dx, dy, imgscale
 
 
 def parse_tds_slit(slitname):
@@ -217,8 +228,15 @@ def find_slit_position(image, spec, speclim):
     print('PA ', PA)
     print('Slit width ', wy)
 
-    dx, dy = dxdy_setup(img, F_slit, imgscale, specscale, xy_center, wy, crpix2,
-                        spec_x)
+    dx, dy, imgscale_n = dxdy_setup(img, F_slit, imgscale, specscale, xy_center,
+                                  wy, crpix2, spec_x)
+
+    if imgscale_n / imgscale < 0:
+        PA += 180
+    if PA > 360:
+        PA -= 360
+
+    imgscale = imgscale_n
 
     x = xy_center[0] + dx
     y = xy_center[1] + dy
@@ -285,6 +303,7 @@ def main(args=None):
 
     res = fits.open(pargs.spectrum)
     res[0].header = hdr_new
+    print('Saving result to ', name)
     res.writeto(name, overwrite=True)
     return(0)
 
