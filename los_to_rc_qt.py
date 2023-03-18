@@ -151,8 +151,6 @@ class galaxyImage():
             self.axes_gal.lines.remove(line)
 
         for slit, mask, i in zip(slits, masks, range(0, 20, 2)):
-            print(i)
-            print(i + 1)
             mask1, mask2 = mask
             if len(mask1[mask1]) > 0:
                 self.axes_gal.plot(
