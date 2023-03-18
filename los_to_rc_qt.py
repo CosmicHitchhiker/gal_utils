@@ -147,6 +147,11 @@ class galaxyImage():
     def plot_slit(self, slits, masks):
         self.slits = slits
         self.masks = masks
+<<<<<<< Updated upstream
+        for slit, mask in zip(slits, masks):
+            plot_slit_points(self.axes_gal, slit, mask,
+                             'icrs')
+=======
         for line in self.axes_gal.lines:
             self.axes_gal.lines.remove(line)
 
@@ -168,6 +173,7 @@ class galaxyImage():
                     linestyle='',
                     transform=self.axes_gal.get_transform('icrs'),
                     color=self.colors[i + 1])
+>>>>>>> Stashed changes
 
 
 class csvPlot():
