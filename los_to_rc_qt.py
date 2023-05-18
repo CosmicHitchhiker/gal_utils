@@ -49,6 +49,15 @@ def plot_slit_points(ax, rel_slit, masks=None, gal_frame=None, line=None):
 
 def los_to_rc(data, slit, gal_frame, inclination, sys_vel,
               obj_name=None, verr_lim=200):
+    '''
+    data - pd.DataFrame
+    slit - SkyCoord (inerable - SkyCoord of list)
+    gal_frame - coordinates frame
+    inclination - float * u.deg
+    sys_vel - float
+    obj_name - str
+    verr_lim - float
+    '''
     H0 = 70 / (1e+6 * u.parsec)
     slit_pos = data['position']
 
@@ -96,8 +105,8 @@ def los_to_rc(data, slit, gal_frame, inclination, sys_vel,
     first_side_mask = (first_side & mask)
     second_side_mask = (second_side & mask)
 
-    data['Radial_v'] = -vel_r
-    data['Radial_v_err'] = vel_r_err
+    data['Circular_v'] = -vel_r
+    data['Circular_v_err'] = vel_r_err
     data['R'] = R_slit / u.parsec
     data['mask1'] = np.array(first_side_mask, dtype=bool)
     data['mask2'] = np.array(second_side_mask, dtype=bool)
@@ -137,6 +146,8 @@ class galaxyImage():
             self.overlay['lon'].set_ticklabel(alpha=0)
             self.overlay['lat'].set_ticklabel(alpha=0)
             self.overlay.grid(color='white', linestyle='solid', alpha=0.5)
+            self.axes_gal.plot(0, 0, 'ro',
+                               transform=self.axes_gal.get_transform(gal_frame))
 
         if self.slits is not None:
             self.plot_slit(self.slits, self.masks)
@@ -176,6 +187,7 @@ class galaxyImage():
 class csvPlot():
     def __init__(self, data, figure):
         self.colors = colormaps['tab20'](np.linspace(0, 1, 20))
+        # data - list of pd.DataFrame
         self.data = data
         self.slits = []
         for dat in self.data:
@@ -196,15 +208,15 @@ class csvPlot():
         return self.slits, self.masks
 
     def plot_rc(self):
-        self.axes_plot.set_ylabel('Radial Velocity, km/s')
+        self.axes_plot.set_ylabel('Circular Velocity, km/s')
         self.axes_plot.set_xlabel('R, parsec')
         for dat, mask, i in zip(self.data, self.masks, range(0, 20, 2)):
-            verr = dat['Radial_v_err'].to_numpy()
+            verr = dat['Circular_v_err'].to_numpy()
             mask1, mask2 = mask
             if len(mask1[mask1]) > 0:
                 self.axes_plot.errorbar(
                     dat['R'][mask1],
-                    dat['Radial_v'][mask1],
+                    dat['Circular_v'][mask1],
                     yerr=verr[mask1],
                     linestyle='',
                     marker='.',
@@ -212,7 +224,7 @@ class csvPlot():
             if len(mask2[mask2]) > 0:
                 self.axes_plot.errorbar(
                     dat['R'][mask2],
-                    dat['Radial_v'][mask2],
+                    dat['Circular_v'][mask2],
                     yerr=verr[mask2],
                     linestyle='',
                     marker='.',
