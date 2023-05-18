@@ -14,7 +14,8 @@ from astropy.wcs import WCS
 import astropy.units as u
 from astropy.coordinates import Angle, SkyCoord
 import pandas as pd
-import time
+# from itertools import zip_longest, chain
+from matplotlib import colormaps
 
 # from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
@@ -37,25 +38,29 @@ from PySide6.QtWidgets import (
 matplotlib.use('QtAgg')
 
 
-def plot_slit_points(ax, rel_slit, masks=None, gal_frame=None):
+def plot_slit_points(ax, rel_slit, masks=None, gal_frame=None, line=None):
     if masks is None:
         masks = [np.ones(len(rel_slit)).astype(bool)]
-
     for mask in masks:
-        ax.plot(rel_slit.ra[mask], rel_slit.dec[mask], marker='.',
-                linestyle='', transform=ax.get_transform(gal_frame))
+        if len(mask[mask]) > 0:
+            ax.plot(rel_slit.ra[mask], rel_slit.dec[mask], marker='.',
+                    linestyle='', transform=ax.get_transform(gal_frame))
 
 
-def los_to_rc(data, gal_frame, inclination, sys_vel, ax=None,
+def los_to_rc(data, slit, gal_frame, inclination, sys_vel,
               obj_name=None, verr_lim=200):
+    '''
+    data - pd.DataFrame
+    slit - SkyCoord (inerable - SkyCoord of list)
+    gal_frame - coordinates frame
+    inclination - float * u.deg
+    sys_vel - float
+    obj_name - str
+    verr_lim - float
+    '''
     H0 = 70 / (1e+6 * u.parsec)
-    slit_ra = data['RA']
-    slit_dec = data['DEC']
     slit_pos = data['position']
-    slit = SkyCoord(slit_ra, slit_dec, frame='icrs', unit=(u.hourangle, u.deg))
 
-    # gal_PA большой полуоси, туда будет направлена ось "широт"
-    # gal_frame = gal_center.skyoffset_frame(rotation=gal_PA)
     gal_center = SkyCoord(0 * u.deg, 0 * u.deg, frame=gal_frame)
     rel_slit = slit.transform_to(gal_frame)
 
@@ -80,6 +85,15 @@ def los_to_rc(data, gal_frame, inclination, sys_vel, ax=None,
     vel_r_err = np.abs(vel_lon_err / np.cos(slit_gal_PA))
 
     mask = (vel_r_err < verr_lim)
+    mask_center = (Separation.to(u.arcsec) > 5 * u.arcsec)
+    cone_angle = 20 * u.deg
+    mask_cone_1 = (slit_gal_PA > 90 * u.deg - cone_angle) & \
+                  (slit_gal_PA < 90 * u.deg + cone_angle)
+    mask_cone_2 = (slit_gal_PA > 270 * u.deg - cone_angle) & \
+                  (slit_gal_PA < 270 * u.deg + cone_angle)
+    mask_cone = ~(mask_cone_1 | mask_cone_2)
+    mask = mask & mask_center
+    mask = mask & mask_cone
 
     # lat = np.array(rel_slit_corr.lat.to(u.arcsec)/u.arcsec)
     # minor_ax = np.argmin(np.abs(lat))
@@ -91,19 +105,18 @@ def los_to_rc(data, gal_frame, inclination, sys_vel, ax=None,
     first_side_mask = (first_side & mask)
     second_side_mask = (second_side & mask)
 
-    # plt.ylim(-70, 140)
-    ax.set_ylabel('Radial Velocity, km/s')
-    ax.set_xlabel('R, parsec')
-    ax.errorbar(R_slit[first_side_mask] / u.parsec, -vel_r[first_side_mask],
-                yerr=vel_r_err[first_side_mask], linestyle='', marker='.')
-    ax.errorbar(R_slit[second_side_mask] / u.parsec, -vel_r[second_side_mask],
-                yerr=vel_r_err[second_side_mask], linestyle='', marker='.')
+    data['Circular_v'] = -vel_r
+    data['Circular_v_err'] = vel_r_err
+    data['R'] = R_slit / u.parsec
+    data['mask1'] = np.array(first_side_mask, dtype=bool)
+    data['mask2'] = np.array(second_side_mask, dtype=bool)
 
-    return slit, [first_side_mask, second_side_mask]
+    return data
 
 
 class galaxyImage():
     def __init__(self, figure, image):
+        self.colors = colormaps['tab20'](np.linspace(0, 1, 20))
         self.wcs = WCS(image.header)
         self.figure = figure
         self.axes_gal = figure.subplots(
@@ -112,6 +125,7 @@ class galaxyImage():
         self.norm_im = simple_norm(image.data, 'linear', percent=99.3)
         self.slits = None
         self.masks = None
+        self.slit_draws = None
         self.plot_galaxy()
 
     def plot_galaxy(self, gal_frame=None):
@@ -132,6 +146,8 @@ class galaxyImage():
             self.overlay['lon'].set_ticklabel(alpha=0)
             self.overlay['lat'].set_ticklabel(alpha=0)
             self.overlay.grid(color='white', linestyle='solid', alpha=0.5)
+            self.axes_gal.plot(0, 0, 'ro',
+                               transform=self.axes_gal.get_transform(gal_frame))
 
         if self.slits is not None:
             self.plot_slit(self.slits, self.masks)
@@ -145,21 +161,74 @@ class galaxyImage():
             plot_slit_points(self.axes_gal, slit, mask,
                              'icrs')
 
+        for line in self.axes_gal.lines:
+            self.axes_gal.lines.remove(line)
+
+        for slit, mask, i in zip(slits, masks, range(0, 20, 2)):
+            mask1, mask2 = mask
+            if len(mask1[mask1]) > 0:
+                self.axes_gal.plot(
+                    slit.ra[mask1],
+                    slit.dec[mask1],
+                    marker='.',
+                    linestyle='',
+                    transform=self.axes_gal.get_transform('icrs'),
+                    color=self.colors[i])
+            if len(mask2[mask2]) > 0:
+                self.axes_gal.plot(
+                    slit.ra[mask2],
+                    slit.dec[mask2],
+                    marker='.',
+                    linestyle='',
+                    transform=self.axes_gal.get_transform('icrs'),
+                    color=self.colors[i + 1])
+
 
 class csvPlot():
     def __init__(self, data, figure):
+        self.colors = colormaps['tab20'](np.linspace(0, 1, 20))
+        # data - list of pd.DataFrame
         self.data = data
+        self.slits = []
+        for dat in self.data:
+            slit_ra = dat['RA']
+            slit_dec = dat['DEC']
+            self.slits.append(SkyCoord(slit_ra, slit_dec, frame='icrs',
+                                       unit=(u.hourangle, u.deg)))
         self.axes_plot = figure.subplots()
 
-    def plot_rc(self, gal_frame, inclination, sys_vel):
-        self.rel_slits = []
+    def calc_rc(self, gal_frame, inclination, sys_vel):
+        self.axes_plot.clear()
         self.masks = []
-        for dat in self.data:
-            rel_slit, mask = los_to_rc(dat, gal_frame, inclination, sys_vel,
-                                       ax=self.axes_plot)
-            self.rel_slits.append(rel_slit)
-            self.masks.append(mask)
-        return self.rel_slits, self.masks
+        for dat, slit in zip(self.data, self.slits):
+            dat = los_to_rc(dat, slit, gal_frame, inclination, sys_vel)
+            self.masks.append([dat['mask1'].to_numpy(),
+                               dat['mask2'].to_numpy()])
+        self.plot_rc()
+        return self.slits, self.masks
+
+    def plot_rc(self):
+        self.axes_plot.set_ylabel('Circular Velocity, km/s')
+        self.axes_plot.set_xlabel('R, parsec')
+        for dat, mask, i in zip(self.data, self.masks, range(0, 20, 2)):
+            verr = dat['Circular_v_err'].to_numpy()
+            mask1, mask2 = mask
+            if len(mask1[mask1]) > 0:
+                self.axes_plot.errorbar(
+                    dat['R'][mask1],
+                    dat['Circular_v'][mask1],
+                    yerr=verr[mask1],
+                    linestyle='',
+                    marker='.',
+                    color=self.colors[i])
+            if len(mask2[mask2]) > 0:
+                self.axes_plot.errorbar(
+                    dat['R'][mask2],
+                    dat['Circular_v'][mask2],
+                    yerr=verr[mask2],
+                    linestyle='',
+                    marker='.',
+                    color=self.colors[i + 1])
 
 
 class OpenFile(QWidget):
@@ -355,6 +424,9 @@ class PlotWidget(QWidget):
         glayout.addWidget(self.gal_fig, 1, 1)
         glayout.addLayout(left_layout, 2, 0)
         glayout.addLayout(right_layout, 2, 1)
+        glayout.setRowStretch(0, 0)
+        glayout.setRowStretch(1, 1)
+        glayout.setRowStretch(2, 0)
         self.setLayout(glayout)
 
         self.galIm = None
@@ -365,6 +437,8 @@ class PlotWidget(QWidget):
         self.PA_input.valueChanged.connect(self.galFrameChanged)
         self.ra_input.valueChanged.connect(self.galFrameChanged)
         self.dec_input.valueChanged.connect(self.galFrameChanged)
+        self.vel_input.valueChanged.connect(self.kinematicsChanged)
+        self.i_input.valueChanged.connect(self.kinematicsChanged)
 
     @Slot()
     def galChanged(self):
@@ -378,7 +452,17 @@ class PlotWidget(QWidget):
     def galFrameChanged(self):
         self.updateValues()
         self.galIm.plot_galaxy(self.gal_frame)
+        slits, masks = self.csvGraph.calc_rc(self.gal_frame, self.inclination,
+                                             self.sys_vel)
+        self.galIm.plot_slit(slits, masks)
         self.gal_fig.draw()
+        self.plot_fig.draw()
+
+    @Slot()
+    def kinematicsChanged(self):
+        self.updateValues()
+        self.csvGraph.calc_rc(self.gal_frame, self.inclination, self.sys_vel)
+        self.plot_fig.draw()
 
     @Slot()
     def redraw(self):
@@ -396,10 +480,11 @@ class PlotWidget(QWidget):
             self.plot_fig.figure.clear()
             data = [pd.read_csv(x) for x in self.csv_field.files]
             self.csvGraph = csvPlot(data, self.plot_fig.figure)
-            slits, masks = self.csvGraph.plot_rc(self.gal_frame,
+            slits, masks = self.csvGraph.calc_rc(self.gal_frame,
                                                  self.inclination,
                                                  self.sys_vel)
             if self.galIm is not None:
+                self.galIm.plot_galaxy(self.gal_frame)
                 self.galIm.plot_slit(slits, masks)
             self.csv_changed = False
 

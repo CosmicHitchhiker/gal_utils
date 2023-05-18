@@ -193,7 +193,7 @@ def find_slit_position(image, spec, speclim):
         PA = spec.header['POSANG']
     elif 'PARANGLE' in spec.header and 'ROTANGLE' in spec.header:
         # SCORPIO
-        PA = spec.header['PARANGLE'] - spec.header['ROTANGLE'] + 132.5 + 90
+        PA = spec.header['PARANGLE'] - spec.header['ROTANGLE'] + 132.5
     else:
         PA = 0
 
