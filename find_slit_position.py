@@ -162,6 +162,24 @@ def get_img_PA(wcs):
 
 
 def find_slit_position(image, spec, speclim):
+    '''Find slit coordinates that fit image flux distribution the best.
+
+    Parameters
+    ----------
+    image : ImageHDU or PrimaryHDU
+            Image HDU that should contain correct WCS parameters in header.
+            The photometry band should be close to the spectrum band.
+    spec : ImageHDU or PrimaryHDU
+            Spectrum HDU
+    speclim : slice
+            Slice with bounds of y-coordinates os spectrum. In pixels.
+
+    Returns
+    -------
+    spec_header_new : fits header
+            Fits header that contains correct coordinates of slit and
+            can replace the original header of spectrum.
+    '''
     if 'EPOCH' in spec.header:
         equinox = "J" + str(spec.header['EPOCH'])
         spec_center = SkyCoord(spec.header['RA'], spec.header['DEC'],
@@ -229,7 +247,7 @@ def find_slit_position(image, spec, speclim):
     print('Slit width ', wy)
 
     dx, dy, imgscale_n = dxdy_setup(img, F_slit, imgscale, specscale, xy_center,
-                                  wy, crpix2, spec_x)
+                                    wy, crpix2, spec_x)
 
     if imgscale_n / imgscale < 0:
         PA += 180
