@@ -165,6 +165,42 @@ def get_img_PA(wcs):
     return(pa.deg)
 
 
+def get_init_slit_pos(hdr):
+    if 'EPOCH' in hdr:
+        equinox = "J" + str(hdr['EPOCH'])
+        spec_refcoord = SkyCoord(hdr['RA'], hdr['DEC'],
+                                 unit=(u.hourangle, u.deg),
+                                 frame=FK5(equinox=equinox))
+    else:
+        spec_refcoord = SkyCoord(hdr['RA'], hdr['DEC'],
+                                 unit=(u.hourangle, u.deg))
+
+    specscale = hdr['CDELT2']
+
+    if 'CRPIX2' in hdr:
+        crpix2 = hdr['CRPIX2']
+    else:
+        crpix2 = hdr['NAXIS2'] // 2
+
+    if 'POSANG' in hdr:
+        # TDS
+        PA = hdr['POSANG']
+    elif 'PARANGLE' in hdr and 'ROTANGLE' in hdr:
+        # SCORPIO
+        PA = hdr['PARANGLE'] - hdr['ROTANGLE'] + 132.5
+    else:
+        PA = 0
+    if PA >= 360:
+        PA -= 360
+
+    if 'SLIT' in hdr:
+        wy = parse_tds_slit(hdr['SLIT'])
+    else:
+        wy = 1.0
+
+    return spec_refcoord, specscale, crpix2, PA, wy
+
+
 def find_slit_position(image, spec, speclim):
     '''Find slit coordinates that fit image flux distribution the best.
 
@@ -184,52 +220,26 @@ def find_slit_position(image, spec, speclim):
             Fits header that contains correct coordinates of slit and
             can replace the original header of spectrum.
     '''
-    if 'EPOCH' in spec.header:
-        equinox = "J" + str(spec.header['EPOCH'])
-        spec_center = SkyCoord(spec.header['RA'], spec.header['DEC'],
-                               unit=(u.hourangle, u.deg),
-                               frame=FK5(equinox=equinox))
-    else:
-        spec_center = SkyCoord(spec.header['RA'], spec.header['DEC'],
-                               unit=(u.hourangle, u.deg))
+    # spec_refcoord - SkyCoord of reference pixel in spectrum
+    # specscale - float (arcsec/pix), coordinate along slit
+    # crpix2 - int or float, reference pixel along slit
+    # PA - float (deg), positional angle of slit
+    # wy - float (arcsec), width of slit
+    spec_refcoord, specscale, crpix2, PA, wy = get_init_slit_pos(spec.header)
     wcs = WCS(image.header)
     print(wcs)
-    print(spec_center)
-    xy_cent = [int(t) for t in wcs.world_to_pixel(spec_center)]
+    print('Reference coordinates before correction: ', spec_refcoord)
+    xy_cent = [int(t) for t in wcs.world_to_pixel(spec_refcoord)]
 
     imsc_sgn = np.sign(image.header['CD1_1'] * 3600)
-    print('Image scale ', imsc_sgn)
+    print('Image scale sign: ', imsc_sgn)
 
     imgPA = get_img_PA(wcs)
     print('Image PA ', imgPA)
 
-    specscale = spec.header['CDELT2']
-
-    if 'CRPIX2' in spec.header:
-        crpix2 = spec.header['CRPIX2']
-    else:
-        crpix2 = spec.header['NAXIS2'] // 2
-
-    if 'POSANG' in spec.header:
-        # TDS
-        PA = spec.header['POSANG']
-    elif 'PARANGLE' in spec.header and 'ROTANGLE' in spec.header:
-        # SCORPIO
-        PA = spec.header['PARANGLE'] - spec.header['ROTANGLE'] + 132.5
-    else:
-        PA = 0
-
-    if PA >= 360:
-        PA -= 360
-
     rotangle = PA - imgPA - 90
     if np.abs(rotangle) < 1:
         rotangle = 0
-
-    if 'SLIT' in spec.header:
-        wy = parse_tds_slit(spec.header['SLIT'])
-    else:
-        wy = 1.0
 
     spec_data = spec.data[speclim]
     spec_x = np.arange(spec.header['NAXIS2'])[speclim]
