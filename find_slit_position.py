@@ -155,8 +155,12 @@ def get_img_scale(slit_cent, wcs, angle, center):
 
 
 def get_img_PA(wcs):
-    pix1 = wcs.pixel_to_world(0, 0)
-    pix2 = wcs.pixel_to_world(0, 1)
+    '''Return angle between direction to the north pole and vertical vector on
+    the center of image.
+    '''
+    nx, ny = wcs.array_shape
+    pix1 = wcs.pixel_to_world(0.5 * nx, 0.5 * ny)
+    pix2 = wcs.pixel_to_world(0.5 * nx, 0.6 * ny)
     pa = pix1.position_angle(pix2)
     return(pa.deg)
 
