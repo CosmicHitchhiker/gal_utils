@@ -49,7 +49,8 @@ class mySlit(Polygon):
     Additional keyword arguments are passed to `~matplotlib.patches.Polygon`
     """
 
-    def __init__(self, anchor, width=1.5 * u.arcsec, height=3 * u.arcmin,
+    def __init__(self, anchor, width=1.5 * u.arcsec, height_up=3 * u.arcmin,
+                 height_down=0 * u.arcmin,
                  theta=0 * u.deg, resolution=100, vertex_unit=u.deg, **kwargs):
 
         # Extract longitude/latitude, either from a tuple of two quantities, or
@@ -61,15 +62,17 @@ class mySlit(Polygon):
 
         # Convert the quadrangle dimensions to the appropriate units
         width = width.to_value(vertex_unit)
-        height = height.to_value(vertex_unit)
+        height_up = height_up.to_value(vertex_unit)
+        height_down = height_down.to_value(vertex_unit)
 
         # Corner coordinates
         longitude = lon_c - width * 0.5
-        latitude = lat_c - height * 0.5
+        latitude = lat_c - height_down
 
         # Create progressions in longitude and latitude
         lon_seq = longitude + np.linspace(0, width, resolution + 1)
-        lat_seq = latitude + np.linspace(0, height, resolution + 1)
+        lat_seq = latitude + np.linspace(0, height_down + height_up,
+                                         resolution + 1)
 
         # Trace the path of the quadrangle
         lon = np.concatenate([lon_seq[:-1],
@@ -151,7 +154,10 @@ def main(args=None):
     # PA щели, туда будет направлена ось "широт"
     slit_frame = slit_center.skyoffset_frame(rotation=PA)
 
-    s = mySlit([0 * u.deg, 0 * u.deg], slit_width * u.arcsec, 3.0 * u.arcmin,
+    h_up = (hdr['NAXIS2'] - hdr['CRPIX2']) * hdr['CDELT2'] * u.arcsec
+    h_down = (hdr['CRPIX2'] - 0) * hdr['CDELT2'] * u.arcsec
+
+    s = mySlit([0 * u.deg, 0 * u.deg], slit_width * u.arcsec, h_up, h_down,
                theta=0 * u.deg,
                edgecolor='tab:olive', facecolor='none', lw=0.5,
                transform=ax.get_transform(slit_frame))
