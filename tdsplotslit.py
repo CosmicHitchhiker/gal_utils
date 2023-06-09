@@ -88,7 +88,6 @@ class mySlit(Polygon):
         vertices = np.array([lon, lat])
 
         # Rotation matrix
-        print(u.Quantity(theta * u.rad).to_value(u.deg))
         rot_matrix = np.array([[np.cos(theta), +np.sin(theta)],
                                [-np.sin(theta), np.cos(theta)]])
 
@@ -149,13 +148,15 @@ def main(args=None):
     ax.imshow(image.data, cmap='bone', origin='lower', norm=norm)
 
     slit_center = SkyCoord(*radec_slit, frame='icrs', unit=(u.hourangle, u.deg))
-    print("slit center: ", slit_center.ra.to_string(unit=u.hourangle, sep=':'),
+    print("slit refpix: ", slit_center.ra.to_string(unit=u.hourangle, sep=':'),
           slit_center.dec.to_string(unit=u.deg, sep=':'))
     # PA щели, туда будет направлена ось "широт"
     slit_frame = slit_center.skyoffset_frame(rotation=PA)
 
     h_up = (hdr['NAXIS2'] - hdr['CRPIX2']) * hdr['CDELT2'] * u.arcsec
     h_down = (hdr['CRPIX2'] - 0) * hdr['CDELT2'] * u.arcsec
+    h_all = h_up + h_down
+    print("slit length: ", h_all.to(u.arcmin))
 
     s = mySlit([0 * u.deg, 0 * u.deg], slit_width * u.arcsec, h_up, h_down,
                theta=0 * u.deg,
