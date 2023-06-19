@@ -15,12 +15,19 @@ mpl.rcParams['text.usetex'] = True
 mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}'
 
 
-def myrot(x, y, rot, cent=[0, 0]):
+def myrot(x, y, rot, cent=[0, 0], verbose=False):
     drot = rot * np.pi / 180.
     xc = x - cent[0]
     yc = y - cent[1]
     xnew = xc * np.cos(drot) + yc * np.sin(drot) + cent[0]
-    ynew = -xc * np.sin(drot) + yc * np.cos(drot) + cent[1]
+    ynew = -1 * xc * np.sin(drot) + yc * np.cos(drot) + cent[1]
+
+    if verbose:
+        print('rotangle in radians: ', drot)
+        print(np.sin(drot))
+        print(x, y)
+        print(xc, yc)
+        print(xnew, ynew)
     return [xnew, ynew]
 
 
@@ -47,6 +54,12 @@ def get_img_PA(wcs):
 
 
 def meas_slit_params(meascsv):
+    '''
+    Parameters
+    ----------
+    meascsv : pd.DataFrame
+    '''
+    # position raltive to reference pixel in arcsec
     pos = meascsv['position'].to_numpy()
     min_p, max_p = np.argmin(pos), np.argmax(pos)
 
@@ -89,23 +102,30 @@ def plot_csv(csvname, error_lim, title, image=None, dx=0, dy=0):
         wcs = WCS(image.header)
         xy_cent = [int(t) for t in wcs.world_to_pixel(spec_center)]
 
-        imsc_sgn = np.sign(image.header['CD1_1'])
+        # imsc_sgn = np.sign(image.header['CD1_1'])
         imgPA = get_img_PA(wcs)
-        print(PA)
-        print(imgPA)
-        print(spec_center.to_string('hmsdms'))
-        print(xy_cent)
-        rotangle = PA - imgPA - 90
+        print('Slit PA: ', PA)
+        print('Image PA: ', imgPA)
+        print('Spectrum reference point sky coordinates: ',
+              spec_center.to_string('hmsdms'))
+        print('Spectrum reference point image coordinates: ', xy_cent)
+        # 90 to make image horizontal
+        rotangle = PA - imgPA + 90
+        print('rotangle: ', rotangle)
 
         img = image.data
         Ny, Nx = np.shape(img)
-        center_image = [Nx / 2, Ny / 2]
-        xy_center = myrot(*xy_cent, rotangle, center_image)
+        center_image = [Nx / 2., Ny / 2.]
+        xy_center = myrot(*xy_cent, rotangle, center_image, verbose=True)
         print(xy_center)
         img = ndimage.rotate(img, rotangle, reshape=False, mode='nearest')
         norm = simple_norm(img, 'linear', percent=98.0)
-        imgscale = get_img_scale(xy_center, wcs, rotangle, center_image) * \
-            imsc_sgn
+        imgscale = get_img_scale(xy_center, wcs, rotangle, center_image)
+
+        # plt.figure()
+        # plt.imshow(img, cmap='bone', origin='lower', norm=norm)
+        # plt.plot(xy_center[0], xy_center[1], 'ro')
+        # plt.show()
 
         print(imgscale)
         extent = [-(xy_center[0] * imgscale) + dx,

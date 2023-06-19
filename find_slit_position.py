@@ -11,6 +11,7 @@ from scipy import optimize
 import astropy.units as u
 from astropy.visualization import simple_norm
 from astropy.coordinates import FK5
+import scipy.signal as sig
 
 
 def myinterp(x_new, x, f):
@@ -29,53 +30,56 @@ def correlation(vec1, vec2):
     return(np.arccos(np.sum(vec1 * vec2)))
 
 
+def prepare_spec(spec):
+    spec_filt = sig.medfilt(spec, 7)
+    spec_new = spec - spec_filt.min()
+    spec_new[spec_new < 0] = 0
+    return spec_new
+
+
 def Qfunc3(xys0, img, slit0, imgscale, wy=1.5, crpix2=256, spec_x=None,
            verbose=False):
-    # Slit is horizontal on image
-    wy = np.abs(0.5 * wy / imgscale)
+    # Slit is vertical on image
+    wslit = np.abs(0.5 * wy / imgscale)
     x0, y0, slitscale = xys0
     # slitscale *= np.sign(imgscale)
-    slit = norm_vector(slit0.copy())
+    # Move zero-point
+    slit = prepare_spec(slit0.copy())
+    slit = norm_vector(slit)
     if spec_x is None:
         spec_x = np.arange(len(slit))
 
-    img_y = np.arange(len(img)).astype(float)
-    img_y_des = np.arange(y0 - wy, y0 + wy, 0.1)
-    img_reg = np.array([np.interp(img_y_des, img_y, x) for x in img.T]).T
+    # Cut rectagular region with the width of slit and height of image
+    img_x = np.arange(len(img[0])).astype(float)
+    img_x_des = np.arange(x0 - wslit, x0 + wslit, 0.1)
+    img_reg = np.array([np.interp(img_x_des, img_x, x) for x in img])
+    # Sum flux in that region
+    img_reg = np.sum(img_reg, axis=1)
 
-    # print('here')
-    # print(img_reg[10])
-    # plt.plot(img_reg[10])
-    img_reg = np.sum(img_reg, axis=0)
-    # plt.plot(img_reg)
-    # plt.show()
-    # print(img_reg)
-
+    # Coordinates of every spectrum point in arcsec
     slit_x = (spec_x - crpix2) * slitscale
-    img_x = (np.arange(len(img_reg)) - x0) * imgscale
-    # print()
-    # print(slit_x)
-    # print(img_x)
+    # Coordinates of every point in cutted region of image in arcsec
+    img_x = (np.arange(len(img_reg)) - y0) * imgscale
 
     img_reg = myinterp(slit_x, img_x, img_reg)
-    img_reg = img_reg - img_reg.min()
+    img_reg = prepare_spec(img_reg)
     # print(img_reg)
     img_reg = norm_vector(img_reg)
     if verbose:
         plt.figure()
-        plt.plot(slit_x / slitscale, slit, label='spec')
-        plt.plot(slit_x / slitscale, img_reg, label='img')
+        plt.plot(slit_x / imgscale, slit, label='spec')
+        plt.plot(slit_x / imgscale, img_reg, label='img')
         plt.legend()
 
-        realx = (spec_x - crpix2) * (slitscale / imgscale) + x0
+        real_y = slit_x / imgscale + y0
         # len_x = np.abs(len(slit)*slitscale/imgscale).astype(int)
         # real_x = np.arange(len_x)*np.sign(slitscale/imgscale) + x0
-        real_y = np.ones(len(slit)) * y0
+        real_x = np.ones(len(slit)) * x0
 
         plt.figure()
         norm = simple_norm(img, 'linear', percent=98.0)
         plt.imshow(img, origin='lower', norm=norm)
-        plt.plot(realx, real_y)
+        plt.plot(real_x, real_y)
         plt.plot(x0, y0, 'ro')
         plt.show()
 
@@ -98,6 +102,7 @@ def dxdy_setup(img, slit, imgscale, slitscale, xy_center, wy=1.5, crpix2=256,
         params = argparse.ArgumentParser(exit_on_error=False)
         params.add_argument('-dx', type=float, default=dx)
         params.add_argument('-dy', type=float, default=dy)
+        params.add_argument('-i', type=float, default=imgscale)
         parags = params.parse_args('')
         print(parags)
         need_to_change = input("Change any parameters?(leave blank if No)")
@@ -105,8 +110,9 @@ def dxdy_setup(img, slit, imgscale, slitscale, xy_center, wy=1.5, crpix2=256,
             parags = params.parse_args(need_to_change.split())
             dx = parags.dx
             dy = parags.dy
+            imgscale = parags.i
 
-    return dx, dy
+    return dx, dy, imgscale
 
 
 def parse_tds_slit(slitname):
@@ -144,59 +150,104 @@ def get_img_scale(slit_cent, wcs, angle, center):
 
 
 def get_img_PA(wcs):
-    pix1 = wcs.pixel_to_world(0, 0)
-    pix2 = wcs.pixel_to_world(0, 1)
+    '''Return angle between direction to the north pole and vertical vector on
+    the center of image.
+    '''
+    nx, ny = wcs.array_shape
+    pix1 = wcs.pixel_to_world(0.5 * nx, 0.5 * ny)
+    pix2 = wcs.pixel_to_world(0.5 * nx, 0.6 * ny)
     pa = pix1.position_angle(pix2)
     return(pa.deg)
 
 
-def find_slit_position(image, spec, speclim):
-    if 'EPOCH' in spec.header:
-        equinox = "J" + str(spec.header['EPOCH'])
-        spec_center = SkyCoord(spec.header['RA'], spec.header['DEC'],
-                               unit=(u.hourangle, u.deg),
-                               frame=FK5(equinox=equinox))
+def get_init_slit_pos(hdr, rot=0):
+    if 'EPOCH' in hdr:
+        equinox = "J" + str(hdr['EPOCH'])
+        spec_refcoord = SkyCoord(hdr['RA'], hdr['DEC'],
+                                 unit=(u.hourangle, u.deg),
+                                 frame=FK5(equinox=equinox))
     else:
-        spec_center = SkyCoord(spec.header['RA'], spec.header['DEC'],
-                               unit=(u.hourangle, u.deg))
+        spec_refcoord = SkyCoord(hdr['RA'], hdr['DEC'],
+                                 unit=(u.hourangle, u.deg))
+
+    specscale = hdr['CDELT2']
+
+    if 'CRPIX2' in hdr:
+        crpix2 = hdr['CRPIX2']
+    else:
+        crpix2 = hdr['NAXIS2'] // 2
+
+    if 'POSANG' in hdr:
+        # TDS
+        PA = hdr['POSANG']
+    elif 'PARANGLE' in hdr and 'ROTANGLE' in hdr:
+        # SCORPIO
+        PA = hdr['PARANGLE'] - hdr['ROTANGLE'] + 132.5
+    else:
+        PA = 0
+    PA += rot
+
+    if specscale < 0:
+        PA += 180
+        specscale *= -1
+
+    # if PA not in [0,360) (including negative PA)
+    PA = PA - 360 * (PA // 360)
+
+    if 'SLIT' in hdr:
+        wy = parse_tds_slit(hdr['SLIT'])
+    else:
+        wy = 1.0
+
+    return spec_refcoord, specscale, crpix2, PA, wy
+
+
+def plot_img_slit(img, slit_cent, crpix2, spec_x, scalefact):
+    plt.figure()
+    norm = simple_norm(img, 'linear', percent=98.0)
+    plt.imshow(img, origin='lower', norm=norm)
+    plt.plot(slit_cent[0], slit_cent[1], 'ro', label='Slit refpoint')
+    plt.legend()
+    plt.show()
+
+
+def find_slit_position(image, spec, speclim, rot):
+    '''Find slit coordinates that fit image flux distribution the best.
+
+    Parameters
+    ----------
+    image : ImageHDU or PrimaryHDU
+            Image HDU that should contain correct WCS parameters in header.
+            The photometry band should be close to the spectrum band.
+    spec : ImageHDU or PrimaryHDU
+            Spectrum HDU
+    speclim : slice
+            Slice with bounds of y-coordinates os spectrum. In pixels.
+
+    Returns
+    -------
+    spec_header_new : fits header
+            Fits header that contains correct coordinates of slit and
+            can replace the original header of spectrum.
+    '''
+    # spec_refcoord - SkyCoord of reference pixel in spectrum
+    # specscale - float (arcsec/pix), coordinate along slit
+    # crpix2 - int or float, reference pixel along slit
+    # PA - float (deg), positional angle of slit
+    # wy - float (arcsec), width of slit
+    spec_refcoord, specscale, crpix2, PA, wy = get_init_slit_pos(spec.header,
+                                                                 rot)
     wcs = WCS(image.header)
     print(wcs)
-    print(spec_center)
-    xy_cent = [int(t) for t in wcs.world_to_pixel(spec_center)]
-
-    imsc_sgn = np.sign(image.header['CD1_1'] * 3600)
-    print('Image scale ', imsc_sgn)
+    print('Reference coordinates before correction: ', spec_refcoord)
+    xy_refslit = [int(t) for t in wcs.world_to_pixel(spec_refcoord)]
 
     imgPA = get_img_PA(wcs)
     print('Image PA ', imgPA)
 
-    specscale = spec.header['CDELT2']
-
-    if 'CRPIX2' in spec.header:
-        crpix2 = spec.header['CRPIX2']
-    else:
-        crpix2 = spec.header['NAXIS2'] // 2
-
-    if 'POSANG' in spec.header:
-        # TDS
-        PA = spec.header['POSANG']
-    elif 'PARANGLE' in spec.header and 'ROTANGLE' in spec.header:
-        # SCORPIO
-        PA = spec.header['PARANGLE'] - spec.header['ROTANGLE'] + 132.5
-    else:
-        PA = 0
-
-    if PA >= 360:
-        PA -= 360
-
-    rotangle = PA - imgPA - 90
+    rotangle = PA - imgPA
     if np.abs(rotangle) < 1:
         rotangle = 0
-
-    if 'SLIT' in spec.header:
-        wy = parse_tds_slit(spec.header['SLIT'])
-    else:
-        wy = 1.0
 
     spec_data = spec.data[speclim]
     spec_x = np.arange(spec.header['NAXIS2'])[speclim]
@@ -204,12 +255,14 @@ def find_slit_position(image, spec, speclim):
     F_slit = np.sum(spec_data, axis=1)
 
     img = image.data
-    center_image = [len(img[0]) / 2, len(img) / 2]
-    xy_center = myrot(*xy_cent, rotangle, center_image)
+    # center of rotation
+    center_image = [len(img[0]) / 2.0, len(img) / 2.0]
+    # counterclockwise rotation
+    xy_center = myrot(*xy_refslit, rotangle, center_image)
     img = ndimage.rotate(img, rotangle, reshape=False, mode='nearest')
-    print("non-rotated center", xy_cent)
+    print("non-rotated center", xy_refslit)
 
-    imgscale = get_img_scale(xy_center, wcs, rotangle, center_image) * imsc_sgn
+    imgscale = get_img_scale(xy_center, wcs, rotangle, center_image)
 
     print('Spectrum CRPPIX2 ', crpix2)
     print('Spectrum scale ', specscale)
@@ -217,8 +270,15 @@ def find_slit_position(image, spec, speclim):
     print('PA ', PA)
     print('Slit width ', wy)
 
-    dx, dy = dxdy_setup(img, F_slit, imgscale, specscale, xy_center, wy, crpix2,
-                        spec_x)
+    dx, dy, imgscale_n = dxdy_setup(img, F_slit, imgscale, specscale, xy_center,
+                                    wy, crpix2, spec_x)
+
+    if imgscale_n / imgscale < 0:
+        PA += 180
+    if PA > 360:
+        PA -= 360
+
+    imgscale = imgscale_n
 
     x = xy_center[0] + dx
     y = xy_center[1] + dy
@@ -262,6 +322,8 @@ def main(args=None):
                         default=None)
     parser.add_argument('--ymin', default=None)
     parser.add_argument('--ymax', default=None)
+    parser.add_argument('-r', '--rot', type=float,
+                        help='angle to add to slit PA', default=0)
     pargs = parser.parse_args(args[1:])
 
     image = fits.open(pargs.image)[0]
@@ -277,7 +339,7 @@ def main(args=None):
         ymax = None
     ylim = slice(ymin, ymax)
 
-    hdr_new = find_slit_position(image, spectrum, ylim)
+    hdr_new = find_slit_position(image, spectrum, ylim, pargs.rot)
     if pargs.name is None:
         name = (pargs.spectrum).split('.')[0] + '_corrected.fits'
     else:
@@ -285,6 +347,7 @@ def main(args=None):
 
     res = fits.open(pargs.spectrum)
     res[0].header = hdr_new
+    print('Saving result to ', name)
     res.writeto(name, overwrite=True)
     return(0)
 
