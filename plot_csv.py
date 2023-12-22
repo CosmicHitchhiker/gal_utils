@@ -77,9 +77,10 @@ def meas_slit_params(meascsv):
 
 
 def onclick(event):
-    for a in event.canvas.figure.axes:
-        a.axvline(event.xdata, c='green')
-    event.canvas.draw()
+    if event.key == 'shift':
+        for a in event.canvas.figure.axes:
+            a.axvline(event.xdata, c='green')
+        event.canvas.draw()
 
 
 def plot_csv(csvname, error_lim, title, image=None, dx=0, dy=0):
