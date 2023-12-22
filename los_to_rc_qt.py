@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QDoubleSpinBox,
     QVBoxLayout,
+    QHBoxLayout,
     QFormLayout,
     QGridLayout,
     QLineEdit,
@@ -230,6 +231,9 @@ class csvPlot():
                     marker='.',
                     color=self.colors[i + 1])
 
+    def return_rc(self):
+        return self.data
+
 
 class OpenFile(QWidget):
     changed_path = Signal(str)
@@ -300,6 +304,9 @@ class OpenFile(QWidget):
     def fill_string(self, string):
         self.fits_box.setText(string)
         self.check_line()
+
+    def return_filenames(self):
+        return self.files
 
 
 class radecSpinBox(QAbstractSpinBox):
@@ -404,8 +411,13 @@ class PlotWidget(QWidget):
         self.vel_input.setValue(velocity)
 
         self.redraw_button = QPushButton(text='Redraw')
+        self.saveres_button = QPushButton(text='Save Results')
 
         # Layout
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.redraw_button)
+        button_layout.addWidget(self.saveres_button)
+
         left_layout = QFormLayout()
         left_layout.addRow(self.csv_field)
         left_layout.addRow('i', self.i_input)
@@ -415,7 +427,7 @@ class PlotWidget(QWidget):
         right_layout.addRow(self.image_field)
         right_layout.addRow('PA', self.PA_input)
         right_layout.addRow('DEC', self.dec_input)
-        right_layout.addRow(self.redraw_button)
+        right_layout.addRow(button_layout)
 
         glayout = QGridLayout()
         glayout.addWidget(self.toolbar_plot, 0, 0)
@@ -439,6 +451,7 @@ class PlotWidget(QWidget):
         self.dec_input.valueChanged.connect(self.galFrameChanged)
         self.vel_input.valueChanged.connect(self.kinematicsChanged)
         self.i_input.valueChanged.connect(self.kinematicsChanged)
+        self.saveres_button.clicked.connect(self.save_rc)
 
     @Slot()
     def galChanged(self):
@@ -490,6 +503,17 @@ class PlotWidget(QWidget):
 
         self.gal_fig.draw()
         self.plot_fig.draw()
+
+    @Slot()
+    def save_rc(self):
+        filenames = self.csv_field.return_filenames()
+        dataframes = self.csvGraph.return_rc()
+        for fname, dat in zip(filenames, dataframes):
+            fname = ''.join(fname.split('.')[:-1]) + '_rc.csv'
+            print('Saving ', fname)
+            dat[['position', 'velocity', 'v_err', 'sigma_v', 'sigma_v_err',
+                 'flux', 'flux_err', 'RA', 'DEC', 'Circular_v',
+                 'Circular_v_err', 'R', 'mask1', 'mask2']].to_csv(fname)
 
     def updateValues(self):
         self.inclination = self.i_input.value() * u.deg
