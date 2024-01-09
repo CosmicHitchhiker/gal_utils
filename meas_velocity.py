@@ -113,6 +113,9 @@ def fits_to_data(names):
 def gauss_cont(x, s, x0, amp, k, b):
     return amp * np.exp(-(x - x0) ** 2 / (2 * s ** 2)) + k * x + b
 
+def true_gauss_cont(x, s, x0, amp, k, b):
+    return amp / (s * np.sqrt(np.pi * 2)) * np.exp(-(x - x0) ** 2 / (2 * s ** 2)) + k * x + b
+
 
 # noinspection PyTupleAssignmentBalance
 def fit_gauss(data, x, err=None):
@@ -142,7 +145,7 @@ def fit_gauss(data, x, err=None):
         l_bound = [0, np.min(x), 0, -np.inf, -np.inf]
         h_bound = [np.max(x) - np.min(x), np.max(x), np.max(data) * 3,
                    np.inf, np.inf]
-        popt, pcov = opt.curve_fit(gauss_cont, x, data, sigma=err,
+        popt, pcov = opt.curve_fit(true_gauss_cont, x, data, sigma=err,
                                    p0=p0, absolute_sigma=True,
                                    bounds=(l_bound, h_bound))
         return popt, np.sqrt(np.diag(pcov))
