@@ -162,7 +162,9 @@ def main(args=None):
     pargs = parser.parse_args(args[1:])
     csvname = pargs.filename
     dirname = csvname.split('/')[-2]
+    dirpath = '/'.join(csvname.split('/')[:-1])
     title = pargs.title or dirname
+    mpl.rcParams["savefig.directory"] = dirpath
 
     if pargs.image:
         image = fits.open(pargs.image)[0]
