@@ -17,6 +17,18 @@ def myimshow(img, ax=None):
         fig, ax = plt.subplots()
     norm = simple_norm(img, 'linear', percent=60.0)
     ax.imshow(img, origin='lower', norm=norm)
+    
+    
+def sum_bins(reg, reg_err, bin_number, y_bar):
+    bin_n = list(set(bin_number))
+    bin_n.sort()
+    binned_reg = np.array([np.sum(reg[bin_number == n], axis=0) for n in bin_n])
+    binned_err = np.array([np.sqrt(np.sum(reg_err[bin_number == n] ** 2, axis=0))
+                           for n in bin_n])
+    sortmask = np.argsort(y_bar)
+    binned_reg = binned_reg[sortmask]
+    binned_err = binned_err[sortmask]
+    return binned_reg, binned_err, sortmask
 
 
 def mybin(reg: np.ndarray, reg_err: np.ndarray, regpos: np.ndarray, snr=3):
@@ -54,19 +66,7 @@ def mybin(reg: np.ndarray, reg_err: np.ndarray, regpos: np.ndarray, snr=3):
     # sn - snr for each bin
     # n_pixels - number of pixels in each bin
     bin_number, _, _, _, y_bar, sn, n_pixels, _ = vorbin(x, y, signal, noise, snr)
-
-    bin_n = list(set(bin_number))
-    bin_n.sort()
-    binned_reg = np.array([np.sum(reg[bin_number == n], axis=0) for n in bin_n])
-    binned_err = np.array([np.sqrt(np.sum(reg_err[bin_number == n] ** 2, axis=0))
-                           for n in bin_n])
-    sortmask = np.argsort(y_bar)
-    binned_reg = binned_reg[sortmask]
-    binned_err = binned_err[sortmask]
-    n_pixels = n_pixels[sortmask]
-    y_bar = y_bar[sortmask] + regpos.min()
-
-    return binned_reg, binned_err, y_bar, n_pixels
+    return bin_number, y_bar, n_pixels
 
 
 def fits_to_data(names):
@@ -222,6 +222,10 @@ def meas_velocity(data, xlim, ylim, refwl=6562.81, binning=False):
     regwl = wl[xlim]
     regpos = pos[ylim]
 
+    # full spectrum limited by y
+    fullspec = data['data'][0][ylim]
+    fullspec_err = data['errors'][0][ylim]
+
     # plot chosen region flux and snr
     fig, ax = plt.subplots(1, 2)
     myimshow(reg, ax[0])
@@ -229,7 +233,13 @@ def meas_velocity(data, xlim, ylim, refwl=6562.81, binning=False):
     plt.show()
 
     if binning:
-        reg, reg_err, regpos, n_pixels = mybin(reg, reg_err, regpos, snr=binning)
+        # reg, reg_err, regpos, n_pixels = mybin(reg, reg_err, regpos, snr=binning)
+        bin_number, y_bar, n_pixels = mybin(reg, reg_err, regpos, snr=binning)
+        reg, reg_err, sortmask = sum_bins(reg, reg_err, bin_number, y_bar)
+        fullspec, fullspec_err, sortmask = sum_bins(fullspec, fullspec_err, bin_number, y_bar)
+        n_pixels = n_pixels[sortmask]
+        regpos = y_bar[sortmask] + regpos.min()
+
         fig, ax = plt.subplots(1, 2)
         myimshow(reg, ax[0])
         myimshow(reg / reg_err, ax[1])
@@ -251,8 +261,13 @@ def meas_velocity(data, xlim, ylim, refwl=6562.81, binning=False):
     l_max_err = np.sqrt(errs[:, 1] ** 2 + syserr ** 2)
     mask = (l_max_err < 2)
 
+    # flux in line
     I_max = vals[:, 2]
     I_max_err = np.sqrt(errs[:, 2] ** 2)
+
+    # total flux
+    F_total = np.sum(fullspec, axis=1)
+    F_total_err = np.sqrt(np.sum(fullspec_err**2, axis=1))
 
     v = wl_to_v(l_max, refwl)
     v_err = wlerr_to_verr(l_max_err, refwl)
@@ -273,6 +288,8 @@ def meas_velocity(data, xlim, ylim, refwl=6562.81, binning=False):
     result_pd['sigma_v_err'] = wlerr_to_verr(errs[:, 0], refwl)[mask]
     result_pd['flux'] = I_max[mask]
     result_pd['flux_err'] = I_max_err[mask]
+    result_pd['tflux'] = F_total[mask]
+    result_pd['tflux_err'] = F_total_err[mask]
     if binned:
         result_pd['n_rows'] = n_pixels[mask]
     result_pd['RA'], result_pd['DEC'] = get_radec(regpos[mask], hdr)
