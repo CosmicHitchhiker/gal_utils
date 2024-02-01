@@ -8,7 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 import scipy.optimize as opt
 from vorbin.voronoi_2d_binning import voronoi_2d_binning as vorbin
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, SkyOffsetFrame
 import astropy.units as u
 
 
@@ -173,15 +173,20 @@ def coords_from_header_values(crpix, crval, cdelt, naxis):
 
 def get_radec(pos, hdr):
     slit_center = SkyCoord(hdr['RA'], hdr['DEC'], unit=(u.hourangle, u.deg))
-    print(slit_center)
-    print(hdr['POSANG'])
-    slit_ra = slit_center.ra + pos * u.arcsec * np.sin(hdr['POSANG'] * u.deg)
-    print(slit_ra)
-    slit_dec = slit_center.dec + pos * u.arcsec * np.cos(hdr['POSANG'] * u.deg)
-    slit = SkyCoord(slit_ra, slit_dec, frame='icrs')
-    slit_ra = slit.ra.to_string(unit=u.hourangle, sep=':')
-    print(slit_ra)
-    slit_dec = slit.dec.to_string(unit=u.deg, sep=':')
+    slit_PA = hdr['POSANG'] * u.deg
+    # print(slit_center)
+    # print(hdr['POSANG'])
+    slit_frame = SkyOffsetFrame(origin=slit_center, rotation=slit_PA)
+    slit_coords = SkyCoord(lon=np.zeros(len(pos))*u.arcsec, lat=pos*u.arcsec, frame=slit_frame)
+    slit_refcoords = slit_coords.transform_to('icrs')
+
+    # slit_ra = slit_center.ra + pos * u.arcsec * np.sin(hdr['POSANG'] * u.deg)
+    # print(slit_ra)
+    # slit_dec = slit_center.dec + pos * u.arcsec * np.cos(hdr['POSANG'] * u.deg)
+    # slit = SkyCoord(slit_ra, slit_dec, frame='icrs')
+    slit_ra = slit_refcoords.ra.to_string(unit=u.hourangle, sep=':')
+    # print(slit_ra)
+    slit_dec = slit_refcoords.dec.to_string(unit=u.deg, sep=':')
     return slit_ra, slit_dec
 
 
@@ -281,9 +286,10 @@ def meas_velocity(data, xlim, ylim, refwl=6562.81, binning=False):
 
     result_pd = pd.DataFrame()
 
+    # name of errors for <parameter> should be <parameter>_err
     result_pd['position'] = regpos[mask]
     result_pd['velocity'] = v[mask]
-    result_pd['v_err'] = v_err[mask]
+    result_pd['velocity_err'] = v_err[mask]
     result_pd['sigma_v'] = wlerr_to_verr(vals[:, 0], refwl)[mask]
     result_pd['sigma_v_err'] = wlerr_to_verr(errs[:, 0], refwl)[mask]
     result_pd['flux'] = I_max[mask]
