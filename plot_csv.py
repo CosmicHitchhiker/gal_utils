@@ -15,12 +15,19 @@ mpl.rcParams['text.usetex'] = True
 mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}'
 
 
-def myrot(x, y, rot, cent=[0, 0]):
+def myrot(x, y, rot, cent=[0, 0], verbose=False):
     drot = rot * np.pi / 180.
     xc = x - cent[0]
     yc = y - cent[1]
     xnew = xc * np.cos(drot) + yc * np.sin(drot) + cent[0]
-    ynew = -xc * np.sin(drot) + yc * np.cos(drot) + cent[1]
+    ynew = -1 * xc * np.sin(drot) + yc * np.cos(drot) + cent[1]
+
+    if verbose:
+        print('rotangle in radians: ', drot)
+        print(np.sin(drot))
+        print(x, y)
+        print(xc, yc)
+        print(xnew, ynew)
     return [xnew, ynew]
 
 
@@ -40,13 +47,35 @@ def get_img_scale(slit_cent, wcs, angle, center):
 
 
 def get_img_PA(wcs):
-    pix1 = wcs.pixel_to_world(0, 0)
-    pix2 = wcs.pixel_to_world(0, 1)
+    '''Return angle between direction to the north pole and vertical vector on
+    the center of image.
+    '''
+    nx, ny = wcs.array_shape
+    pix1 = wcs.pixel_to_world(0.5 * nx, 0.5 * ny)
+    pix2 = wcs.pixel_to_world(0.5 * nx, 0.6 * ny)
     pa = pix1.position_angle(pix2)
     return(pa.deg)
 
+# def get_img_PA_new(wcs, shape):
+#     print('----TEST----')
+#     pix1 = wcs.pixel_to_world(0, 0)
+#     pix2 = wcs.pixel_to_world(0, 1)
+#     pa = pix1.position_angle(pix2)
+#     print(pa)
+#     pix1 = wcs.pixel_to_world(shape[0]/2, shape[1]/2)
+#     pix2 = wcs.pixel_to_world(shape[0]/2, shape[1]/2 + 100)
+#     pa = pix1.position_angle(pix2)
+#     print(pa)
+#     return(pa.deg)
+
 
 def meas_slit_params(meascsv):
+    '''
+    Parameters
+    ----------
+    meascsv : pd.DataFrame
+    '''
+    # position raltive to reference pixel in arcsec
     pos = meascsv['position'].to_numpy()
     min_p, max_p = np.argmin(pos), np.argmax(pos)
 
@@ -64,9 +93,10 @@ def meas_slit_params(meascsv):
 
 
 def onclick(event):
-    for a in event.canvas.figure.axes:
-        a.axvline(event.xdata, c='green')
-    event.canvas.draw()
+    if event.key == 'shift':
+        for a in event.canvas.figure.axes:
+            a.axvline(event.xdata, c='green')
+        event.canvas.draw()
 
 
 def plot_csv(csvname, error_lim, title, image=None, dx=0, dy=0):
@@ -78,8 +108,8 @@ def plot_csv(csvname, error_lim, title, image=None, dx=0, dy=0):
     ax[1].errorbar(meascsv['position'][mask], meascsv['velocity'][mask],
                    meascsv['v_err'][mask], marker='.', linestyle='')
     ax[1].set_ylabel(r'$V_{los}, km/s$', fontsize='x-large')
-    ax[2].errorbar(meascsv['position'][mask], meascsv['flux'][mask],
-                   meascsv['flux_err'][mask], marker='.', linestyle='')
+    ax[2].errorbar(meascsv['position'][mask], meascsv['tflux'][mask],
+                   meascsv['tflux_err'][mask], marker='.', linestyle='')
     ax[2].set_ylabel(r'$I, counts$', fontsize='x-large')
 
     if image is not None:
@@ -89,23 +119,30 @@ def plot_csv(csvname, error_lim, title, image=None, dx=0, dy=0):
         wcs = WCS(image.header)
         xy_cent = [int(t) for t in wcs.world_to_pixel(spec_center)]
 
-        imsc_sgn = np.sign(image.header['CD1_1'])
+        # imsc_sgn = np.sign(image.header['CD1_1'])
         imgPA = get_img_PA(wcs)
-        print(PA)
-        print(imgPA)
-        print(spec_center.to_string('hmsdms'))
-        print(xy_cent)
-        rotangle = PA - imgPA - 90
+        print('Slit PA: ', PA, 'deg')
+        print('Image PA: ', imgPA, 'deg')
+        print('Spectrum reference point sky coordinates: ',
+              spec_center.to_string('hmsdms'))
+        print('Spectrum reference point image coordinates: ', xy_cent)
+        # 90 to make image horizontal
+        rotangle = PA - imgPA + 90
+        print('rotangle: ', rotangle)
 
         img = image.data
         Ny, Nx = np.shape(img)
-        center_image = [Nx / 2, Ny / 2]
-        xy_center = myrot(*xy_cent, rotangle, center_image)
+        center_image = [Nx / 2., Ny / 2.]
+        xy_center = myrot(*xy_cent, rotangle, center_image, verbose=True)
         print(xy_center)
         img = ndimage.rotate(img, rotangle, reshape=False, mode='nearest')
-        norm = simple_norm(img, 'linear', percent=98.0)
-        imgscale = get_img_scale(xy_center, wcs, rotangle, center_image) * \
-            imsc_sgn
+        norm = simple_norm(img, 'linear', percent=99.9)
+        imgscale = get_img_scale(xy_center, wcs, rotangle, center_image)
+
+        # plt.figure()
+        # plt.imshow(img, cmap='bone', origin='lower', norm=norm)
+        # plt.plot(xy_center[0], xy_center[1], 'ro')
+        # plt.show()
 
         print(imgscale)
         extent = [-(xy_center[0] * imgscale) + dx,
@@ -141,7 +178,9 @@ def main(args=None):
     pargs = parser.parse_args(args[1:])
     csvname = pargs.filename
     dirname = csvname.split('/')[-2]
+    dirpath = '/'.join(csvname.split('/')[:-1])
     title = pargs.title or dirname
+    mpl.rcParams["savefig.directory"] = dirpath
 
     if pargs.image:
         image = fits.open(pargs.image)[0]
