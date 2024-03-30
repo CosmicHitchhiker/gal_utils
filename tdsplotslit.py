@@ -124,6 +124,9 @@ def main(args=None):
     parser.add_argument('--dec-corr', type=float, default=0.0,
                         help='''declination correction for the center
                         of the slit in arcsec''')
+    # TODO: сделать опциональные маркеры центра и верхнего пиксела
+    parser.add_argument('-c', '--center', action='store_true')
+    parser.add_argument('-t', '--top', action='store_true')
     pargs = parser.parse_args(args[1:])
 
     image = fits.open(pargs.image)[0]
@@ -136,6 +139,7 @@ def main(args=None):
     else:
         slit_width = 1.0
 
+    # coordinates of crpix2
     radec_slit[0] += pargs.ra_corr * u.arcsec
     radec_slit[1] += pargs.dec_corr * u.arcsec
 
@@ -163,6 +167,14 @@ def main(args=None):
                edgecolor='tab:olive', facecolor='none', lw=0.5,
                transform=ax.get_transform(slit_frame))
     ax.add_patch(s)
+
+    if pargs.center:
+        x_c, y_c = wcs.world_to_pixel(slit_center)
+        ax.plot(x_c, y_c, 'o')
+    if pargs.top:
+        top_coord = SkyCoord(0*u.arcsec, h_up, frame=slit_frame)
+        x_c, y_c = wcs.world_to_pixel(top_coord)
+        ax.plot(x_c, y_c, 'o')
     # c = mySlit(radec_slit, 0.1*u.arcsec, 0.1*u.arcmin, theta=(PA-45*u.deg),
     #            edgecolor='red', facecolor='none',
     #            transform=ax.get_transform('icrs'))
