@@ -95,6 +95,9 @@ def colnames(dframe):
 
 
 def get_rot_matrix(angle):
+    """Matrix to transform X-Y coordinates (right-handed) to pseudo lat-lon
+    (left-handed), assuming counter-clockwise rotation from Y-axis to
+    lat-axis."""
     alph = np.radians(angle + 90)
     rot_matrix = np.array([[-np.cos(alph), np.sin(alph)],[np.sin(alph), np.cos(alph)]])
     return rot_matrix
