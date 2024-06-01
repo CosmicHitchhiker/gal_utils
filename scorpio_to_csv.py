@@ -45,7 +45,7 @@ def read_scorpio(data, bins, spec_hdr):
     result_pd = pd.DataFrame()
     result_pd['position'] = coords[sortmask]
     result_pd['velocity'] = data[0].data[0, 0][sortmask]
-    result_pd['v_err'] = data[0].data[1, 0][sortmask]
+    result_pd['velocity_err'] = data[0].data[1, 0][sortmask]
     result_pd['sigma_v'] = data[0].data[0, 1][sortmask]
     result_pd['sigma_v_err'] = data[0].data[1, 1][sortmask]
     result_pd['flux'] = data[0].data[0, 2][sortmask]
