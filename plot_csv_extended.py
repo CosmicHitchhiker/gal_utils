@@ -125,7 +125,7 @@ def make_slit_wcs(slit_pa, slitpos, shape=None, center=None, cdelt=None):
     if cdelt is None:
         cdelt = (0.1 * u.arcsec).to(u.deg).value
     if shape is None:
-        shape = (1500, 1500)
+        shape = (1500, 300)
     if center is None:
         center = [shape[0] / 2.0, shape[1] / 2.0]
 
@@ -238,7 +238,9 @@ def plot_csv(data_val, data_err, position, title, image=None, coords=None, dx=0,
                   -(xy_center[1] * imgscale) + dy,
                   (ny - xy_center[1]) * imgscale + dy]
         #
-        ax[0][0].imshow(rot_img, extent=extent, cmap='bone', origin='lower')
+        norm = simple_norm(rot_img, percent=99.0)
+        ax[0][0].imshow(rot_img, extent=extent, cmap='bone', origin='lower',
+                        norm=norm)
         #     # ax[0].plot(*xy_center, 'o')
         ax[0][0].set_xlim(xlim)
         ax[0][0].set_ylim(-15, 15)
