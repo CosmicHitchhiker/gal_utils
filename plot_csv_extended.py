@@ -12,12 +12,13 @@ import reproject
 from copy import deepcopy
 from scipy import ndimage
 from astropy.visualization import simple_norm
+
 mpl.rcParams['text.usetex'] = True
 # for \text command
 mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}'
 
 
-def myrot(x, y, rot, cent=[0, 0], verbose=False):
+def myrot(x, y, rot, cent=(0, 0), verbose=False):
     drot = rot * np.pi / 180.
     xc = x - cent[0]
     yc = y - cent[1]
@@ -52,15 +53,15 @@ def get_img_PA(wcs):
     pix1 = wcs.pixel_to_world(0, 0)
     pix2 = wcs.pixel_to_world(0, 1)
     pa = pix1.position_angle(pix2)
-    return(pa.deg)
+    return pa.deg
 
 
 def meas_slit_params(meascsv):
-    '''
+    """
     Parameters
     ----------
     meascsv : pd.DataFrame
-    '''
+    """
     # position raltive to reference pixel in arcsec
     pos = meascsv['position'].to_numpy()
     min_p, max_p = np.argmin(pos), np.argmax(pos)
@@ -71,14 +72,15 @@ def meas_slit_params(meascsv):
                      unit=(u.hourangle, u.deg))
     # print(max_c.to_string('hmsdms'))
 
-    PA = min_c.position_angle(max_c)
-    PA = 154.6*u.deg
+    pa = min_c.position_angle(max_c)
+    print('PA: ', round(pa.to(u.deg).value))
+    # PA = 154.6*u.deg
     # print('meas_slit_params; PA slit = ', PA.to(u.deg))
 
     max_pos = pos[max_p]
-    zero = max_c.directional_offset_by(PA - 180 * u.deg, max_pos * u.arcsec)
+    zero = max_c.directional_offset_by(pa - 180 * u.deg, max_pos * u.arcsec)
     # print('Slit center: ', zero)
-    return PA.to(u.deg).value, zero
+    return pa.to(u.deg).value, zero
 
 
 def onclick(event):
@@ -90,7 +92,7 @@ def onclick(event):
 
 def colnames(dframe):
     keys = dframe.keys().tolist()
-    good_keys = [x for x in keys if x+'_err' in keys]
+    good_keys = [x for x in keys if x + '_err' in keys]
     return good_keys
 
 
@@ -99,17 +101,18 @@ def get_rot_matrix(angle):
     (left-handed), assuming counter-clockwise rotation from Y-axis to
     lat-axis."""
     alph = np.radians(angle + 90)
-    rot_matrix = np.array([[-np.cos(alph), np.sin(alph)],[np.sin(alph), np.cos(alph)]])
+    rot_matrix = np.array([[-np.cos(alph), np.sin(alph)],
+                           [np.sin(alph), np.cos(alph)]])
     return rot_matrix
 
 
-def make_slit_wcs(slit_PA, slitpos, shape=None, center=None, cdelt=None):
+def make_slit_wcs(slit_pa, slitpos, shape=None, center=None, cdelt=None):
     """Make wcs where x-axis corresponds to the slit PA.
     Refpix of the wcs is the slit center.
 
     Parameters
     ----------
-    slit_PA
+    slit_pa
     slitpos
     shape
     center
@@ -120,17 +123,17 @@ def make_slit_wcs(slit_PA, slitpos, shape=None, center=None, cdelt=None):
 
     """
     if cdelt is None:
-        cdelt = (0.1*u.arcsec).to(u.deg).value
+        cdelt = (0.1 * u.arcsec).to(u.deg).value
     if shape is None:
-        shape = (1500, 1500)
+        shape = (1500, 300)
     if center is None:
-        center = [shape[0]/2.0, shape[1]/2.0]
+        center = [shape[0] / 2.0, shape[1] / 2.0]
 
     w = WCS(naxis=2)
     w.wcs.cdelt = [cdelt, cdelt]
     w.wcs.cunit = [u.deg, u.deg]
     w.wcs.ctype = ["RA---AIR", "DEC--AIR"]
-    w.wcs.pc = get_rot_matrix(slit_PA)
+    w.wcs.pc = get_rot_matrix(slit_pa)
     w.wcs.crpix = center
     # print('Slit center: ', slitpos)
     w.wcs.crval = [slitpos.ra.to(u.deg).value, slitpos.dec.to(u.deg).value]
@@ -160,9 +163,9 @@ def get_rotated_image(image, slit_coords):
         slit center (arcsec)
         'RA' and 'DEC' - coordinates of points (hourangle, degrees)
     """
-    slit_PA, slitpos = meas_slit_params(slit_coords)
+    slit_pa, slitpos = meas_slit_params(slit_coords)
     # print('Slit center: ', slitpos)
-    w, w_header = make_slit_wcs(slit_PA, slitpos)
+    w, w_header = make_slit_wcs(slit_pa, slitpos)
     # print(w)
     rot_image, _ = reproject.reproject_interp(image, w_header)
     # plt.subplot(projection=w)
@@ -172,22 +175,20 @@ def get_rotated_image(image, slit_coords):
     return rot_image, w
 
 
-
 def plot_csv(data_val, data_err, position, title, image=None, coords=None, dx=0, dy=0):
     nrows = len(data_val.keys())
     if image is not None:
-        is_image=1
+        is_image = 1
     else:
-        is_image=0
+        is_image = 0
 
-
-    fig, ax = plt.subplots(nrows=nrows+is_image, squeeze=False, sharex=True, gridspec_kw={'hspace': 0})
+    fig, ax = plt.subplots(nrows=nrows + is_image, squeeze=False, sharex='all', gridspec_kw={'hspace': 0})
     ax[0][0].set_title(title)
 
     for i, key_name in enumerate(data_val.keys()):
-        ax[i+is_image][0].errorbar(position, data_val[key_name],
-                                data_err[key_name], marker='.', linestyle='')
-        ax[i+is_image][0].set_ylabel(key_name, fontsize='x-large')
+        ax[i + is_image][0].errorbar(position, data_val[key_name],
+                                     data_err[key_name], marker='.', linestyle='')
+        ax[i + is_image][0].set_ylabel(key_name, fontsize='x-large')
 
     if image is not None:
         # what borders do the plots already have
@@ -202,44 +203,45 @@ def plot_csv(data_val, data_err, position, title, image=None, coords=None, dx=0,
         imgscale = (wcs.wcs.cdelt[0] * u.Unit(wcs.wcs.cunit[0])).to(u.arcsec)
         imgscale = imgscale.value
         xy_center = wcs.wcs.crpix
-        Nx, Ny = wcs.pixel_shape
+        nx, ny = wcs.pixel_shape
         # print('DEBUG: ', imgscale, xy_center, Ny, Nx)
 
-
-    #     xlim = ax[0].get_xlim()
-    #
-    #     PA, spec_center = meas_slit_params(meascsv)
-    #     wcs = WCS(image.header)
-    #     xy_cent = [int(t) for t in wcs.world_to_pixel(spec_center)]
-    #
-    #     # imsc_sgn = np.sign(image.header['CD1_1'])
-    #     imgPA = get_img_PA(wcs)
-    #     print('Slit PA: ', PA)
-    #     print('Image PA: ', imgPA)
-    #     print('Spectrum reference point sky coordinates: ',
-    #           spec_center.to_string('hmsdms'))
-    #     print('Spectrum reference point image coordinates: ', xy_cent)
-    #     # 90 to make image horizontal
-    #     rotangle = PA - imgPA + 90
-    #     print('rotangle: ', rotangle)
-    #
-    #     img = image.data
-    #     Ny, Nx = np.shape(img)
-    #     center_image = [Nx / 2., Ny / 2.]
-    #     xy_center = myrot(*xy_cent, rotangle, center_image, verbose=True)
-    #     print(xy_center)
-    #     img = ndimage.rotate(img, rotangle, reshape=False, mode='nearest')
-    #     norm = simple_norm(rot_img, 'linear', percent=98.0)
-    #     imgscale = get_img_scale(xy_center, wcs, rotangle, center_image)
-    #
-    #     print(imgscale)
+        #     xlim = ax[0].get_xlim()
+        #
+        #     PA, spec_center = meas_slit_params(meascsv)
+        #     wcs = WCS(image.header)
+        #     xy_cent = [int(t) for t in wcs.world_to_pixel(spec_center)]
+        #
+        #     # imsc_sgn = np.sign(image.header['CD1_1'])
+        #     imgPA = get_img_PA(wcs)
+        #     print('Slit PA: ', PA)
+        #     print('Image PA: ', imgPA)
+        #     print('Spectrum reference point sky coordinates: ',
+        #           spec_center.to_string('hmsdms'))
+        #     print('Spectrum reference point image coordinates: ', xy_cent)
+        #     # 90 to make image horizontal
+        #     rotangle = PA - imgPA + 90
+        #     print('rotangle: ', rotangle)
+        #
+        #     img = image.data
+        #     Ny, Nx = np.shape(img)
+        #     center_image = [Nx / 2., Ny / 2.]
+        #     xy_center = myrot(*xy_cent, rotangle, center_image, verbose=True)
+        #     print(xy_center)
+        #     img = ndimage.rotate(img, rotangle, reshape=False, mode='nearest')
+        #     norm = simple_norm(rot_img, 'linear', percent=98.0)
+        #     imgscale = get_img_scale(xy_center, wcs, rotangle, center_image)
+        #
+        #     print(imgscale)
         extent = [-(xy_center[0] * imgscale) + dx,
-                  (Nx - xy_center[0]) * imgscale + dx,
+                  (nx - xy_center[0]) * imgscale + dx,
                   -(xy_center[1] * imgscale) + dy,
-                  (Ny - xy_center[1]) * imgscale + dy]
-    #
-        ax[0][0].imshow(rot_img, extent=extent, cmap='bone', origin='lower')
-    #     # ax[0].plot(*xy_center, 'o')
+                  (ny - xy_center[1]) * imgscale + dy]
+        #
+        norm = simple_norm(rot_img, percent=99.0)
+        ax[0][0].imshow(rot_img, extent=extent, cmap='bone', origin='lower',
+                        norm=norm)
+        #     # ax[0].plot(*xy_center, 'o')
         ax[0][0].set_xlim(xlim)
         ax[0][0].set_ylim(-15, 15)
         ax[0][0].axhline(-0.5, c='red')
@@ -263,7 +265,7 @@ def get_limits_mask(data, limits_list):
     for k, v in zip(key_list, val_list):
         if v[-1] == '%':
             k2 = k[:-4]
-            rel_err_mask = (data[k]/data[k2] <= (float(v[:-1])/100.))
+            rel_err_mask = (data[k] / data[k2] <= (float(v[:-1]) / 100.))
             mask = mask & rel_err_mask
         else:
             abs_err_mask = (data[k] < float(v))
@@ -298,7 +300,7 @@ def choose_columns(pargs):
                     data_err[i] = data_res[i] * 0
         else:
             for i in pargs.include:
-                e = i+'_err'
+                e = i + '_err'
                 try:
                     data_err[i] = data[e]
                 except KeyError:
@@ -306,7 +308,7 @@ def choose_columns(pargs):
     else:
         names = colnames(data)
         for i in names:
-            if not i in pargs.exclude:
+            if i not in pargs.exclude:
                 e = i + '_err'
                 data_res[i] = data[i]
                 data_err[i] = data[e]
@@ -317,7 +319,6 @@ def choose_columns(pargs):
         data_err = data_err[mask]
         position = position[mask]
 
-
     # print(data_res)
     # print(data_err)
     return data_res, data_err, position
@@ -325,7 +326,7 @@ def choose_columns(pargs):
 
 def get_slit_coords(pargs):
     data = pd.read_csv(pargs.filename, index_col=0)
-    coords = data[['position','RA','DEC']]
+    coords = data[['position', 'RA', 'DEC']]
     # print(coords)
     return coords
 
@@ -372,16 +373,19 @@ def main(args=None):
     data_val, data_err, position = choose_columns(pargs)
     if image:
         slit_coords = get_slit_coords(pargs)
+    else:
+        slit_coords = None
 
     plot_csv(data_val, data_err, position, title, image, slit_coords)
     # ax[2].errorbar(meascsv['position'][mask], meascsv['sigma_v'][mask],
     #                meascsv['sigma_v_err'][mask], marker='.', linestyle='')
     # ax[2].set_ylabel(r'$\sigma V_{los}, km/s$', fontsize='x-large')
     # ax[2].set_xlabel('$position, "$', fontsize='x-large')
-    return(0)
+    return 0
 
 
 if __name__ == '__main__':
     import sys
     import argparse
+
     sys.exit(main(sys.argv))
