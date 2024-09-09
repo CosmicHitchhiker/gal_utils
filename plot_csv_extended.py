@@ -4,7 +4,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 import pandas as pd
 import matplotlib as mpl
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, Angle
 import astropy.units as u
 from astropy.wcs import WCS
 from astropy.io import fits
@@ -73,14 +73,15 @@ def meas_slit_params(meascsv):
     # print(max_c.to_string('hmsdms'))
 
     pa = min_c.position_angle(max_c)
-    print('PA: ', round(pa.to(u.deg).value))
+    print('slit PA: ', round(pa.to(u.deg).value))
     # PA = 154.6*u.deg
     # print('meas_slit_params; PA slit = ', PA.to(u.deg))
 
-    max_pos = pos[max_p]
-    zero = max_c.directional_offset_by(pa - 180 * u.deg, max_pos * u.arcsec)
+    max_pos = pos[max_p] * u.arcsec
+    min_pos = pos[min_p] * u.arcsec
+    zero = max_c.directional_offset_by(pa - 180 * u.deg, max_pos)
     # print('Slit center: ', zero)
-    return pa.to(u.deg).value, zero
+    return pa.to(u.deg).value, zero, min_pos, max_pos
 
 
 def onclick(event):
@@ -106,7 +107,43 @@ def get_rot_matrix(angle):
     return rot_matrix
 
 
-def make_slit_wcs(slit_pa, slitpos, shape=None, center=None, cdelt=None):
+def calc_wcs_params(min_pos, max_pos, cdelt, k=1):
+    """
+    pixels  ------0-----------------l
+    pos     r-----d--a-----c-----b--f
+
+      | pos       | pixels
+    r | 0         | -d/cdelt
+    a | min_pos   |
+    b | max_pos   |
+    c | (a+b)/2   |
+    d | c-k*(c-a) | 0
+    f | c+k*(b-c) | l=k*(b-a)/cdelt
+
+    Parameters
+    ----------
+    min_pos
+    max_pos
+    cdelt
+    k
+
+    Returns
+    -------
+
+    """
+    length = int(k * (max_pos - min_pos) / cdelt)
+    width = int(length / 5)
+    centre = (max_pos + min_pos) / 2.0
+    d = centre - k * (centre - min_pos)
+
+    cdelt_new = k * (max_pos - min_pos) / float(length)
+    ref_x = -d / cdelt_new
+    ref_y = width / 2.0
+    return (length, width), [ref_x, ref_y], cdelt_new
+
+
+def make_slit_wcs(slit_pa, slitpos, shape=None, center=None, cdelt=None,
+                  min_pos=None, max_pos=None):
     """Make wcs where x-axis corresponds to the slit PA.
     Refpix of the wcs is the slit center.
 
@@ -122,12 +159,24 @@ def make_slit_wcs(slit_pa, slitpos, shape=None, center=None, cdelt=None):
     -------
 
     """
+    # size of pixel (in deg)
     if cdelt is None:
         cdelt = (0.1 * u.arcsec).to(u.deg).value
+    else:
+        cdelt = cdelt.to(u.deg).value
     if shape is None:
-        shape = (1500, 300)
+        dist = calc_max_dist(slitpos, min_pos, max_pos)
+        if dist is None:
+            shape = (1500, 300)
+        else:
+            a = int((dist / cdelt).value)
+            b = int(a / 5)
+            shape = (a, b)
+        print('dist', dist)
     if center is None:
         center = [shape[0] / 2.0, shape[1] / 2.0]
+
+    print(shape)
 
     w = WCS(naxis=2)
     w.wcs.cdelt = [cdelt, cdelt]
@@ -150,6 +199,40 @@ def make_slit_wcs(slit_pa, slitpos, shape=None, center=None, cdelt=None):
     return w, w_header
 
 
+def calc_max_dist(a: SkyCoord | None, b: SkyCoord | None, c: SkyCoord | None) -> Angle | None:
+    """Return maximum angle distance between three points at the celestial sphere.
+    If there are less than 2 points, return 0.
+
+    Parameters
+    ----------
+    a : SkyCoord | None
+    b : SkyCoord | None
+    c : SkyCoord | None
+
+    Returns
+    -------
+    Angle if 2 or 3 points given
+    None if less than 2 points provided
+
+    """
+    arr = np.array([a, b, c])
+    print(arr)
+    mask = [True if x is None else False for x in arr]
+    print(mask)
+    mask = np.array(mask)
+    arr = arr[~mask]
+    n = len(arr)
+    if n <= 1:
+        return None
+    elif n == 2:
+        return arr[0].separation(arr[1])
+    else:
+        ab = arr[0].separation(arr[1])
+        bc = arr[1].separation(arr[2])
+        ca = arr[2].separation(arr[0])
+        return max(ab, bc, ca)
+
+
 def get_rotated_image(image, slit_coords):
     """Rotate image so that slit is horizontal
 
@@ -163,11 +246,29 @@ def get_rotated_image(image, slit_coords):
         slit center (arcsec)
         'RA' and 'DEC' - coordinates of points (hourangle, degrees)
     """
-    slit_pa, slitpos = meas_slit_params(slit_coords)
+    # wcs = WCS(image.header)
+    # plt.figure()
+    # plt.title('Щель на изображении')
+    # plt.subplot(projection=wcs)
+    # plt.imshow(image.data)
+    # slit_cord = SkyCoord(slit_coords['RA'], slit_coords['DEC'],
+    #                      frame='icrs',
+    #                      unit=(u.hourangle, u.deg))
+    # slit_cord_pix = wcs.world_to_pixel(slit_cord)
+    # plt.plot(slit_cord_pix[0], slit_cord_pix[1], 'o')
+    # plt.show()
+
+    slit_pa, slitpos, min_pos, max_pos = meas_slit_params(slit_coords)
     # print('Slit center: ', slitpos)
-    w, w_header = make_slit_wcs(slit_pa, slitpos)
+    new_shape, new_crpix, new_cdelt = calc_wcs_params(min_pos, max_pos,
+                                                      0.2*u.arcsec, k=1.1)
+    w, w_header = make_slit_wcs(slit_pa, slitpos, shape=new_shape,
+                                center=new_crpix, cdelt=new_cdelt)
     # print(w)
-    rot_image, _ = reproject.reproject_interp(image, w_header)
+    rot_image, _ = reproject.reproject_interp(image, w_header, order=1)
+    # plt.figure()
+    # plt.imshow(rot_image)
+    # plt.show()
     # plt.subplot(projection=w)
     # plt.imshow(rot_image, origin='lower')
     # plt.show()
