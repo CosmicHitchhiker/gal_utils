@@ -77,11 +77,11 @@ def meas_slit_params(meascsv):
     # PA = 154.6*u.deg
     # print('meas_slit_params; PA slit = ', PA.to(u.deg))
 
-    max_pos = pos[max_p]
-    min_pos = pos[min_p]
-    zero = max_c.directional_offset_by(pa - 180 * u.deg, max_pos * u.arcsec)
+    max_pos = pos[max_p] * u.arcsec
+    min_pos = pos[min_p] * u.arcsec
+    zero = max_c.directional_offset_by(pa - 180 * u.deg, max_pos)
     # print('Slit center: ', zero)
-    return pa.to(u.deg).value, zero, min_c, max_c
+    return pa.to(u.deg).value, zero, min_pos, max_pos
 
 
 def onclick(event):
@@ -162,6 +162,8 @@ def make_slit_wcs(slit_pa, slitpos, shape=None, center=None, cdelt=None,
     # size of pixel (in deg)
     if cdelt is None:
         cdelt = (0.1 * u.arcsec).to(u.deg).value
+    else:
+        cdelt = cdelt.to(u.deg).value
     if shape is None:
         dist = calc_max_dist(slitpos, min_pos, max_pos)
         if dist is None:
@@ -258,9 +260,12 @@ def get_rotated_image(image, slit_coords):
 
     slit_pa, slitpos, min_pos, max_pos = meas_slit_params(slit_coords)
     # print('Slit center: ', slitpos)
-    w, w_header = make_slit_wcs(slit_pa, slitpos, min_pos=min_pos, max_pos=max_pos)
+    new_shape, new_crpix, new_cdelt = calc_wcs_params(min_pos, max_pos,
+                                                      0.2*u.arcsec, k=1.1)
+    w, w_header = make_slit_wcs(slit_pa, slitpos, shape=new_shape,
+                                center=new_crpix, cdelt=new_cdelt)
     # print(w)
-    rot_image, _ = reproject.reproject_interp(image, w_header)
+    rot_image, _ = reproject.reproject_interp(image, w_header, order=1)
     # plt.figure()
     # plt.imshow(rot_image)
     # plt.show()
